@@ -36,7 +36,6 @@ export class GoodHabitsDB extends Dexie {
       cleaningEntries: 'id, date',
       financialTasks: 'id, date',
       books: 'id',
-      bookNotes: 'id, bookId',
       rewards: 'id, tier',
       favoriteBook: 'id',
       lifeGoals: 'id, category',
@@ -44,6 +43,10 @@ export class GoodHabitsDB extends Dexie {
       sleepEntries: 'id, date',
       daySettings: 'date',
       appSettings: 'id',
+    });
+    // v2: adds bookNotes table
+    this.version(2).stores({
+      bookNotes: 'id, bookId',
     });
   }
 }

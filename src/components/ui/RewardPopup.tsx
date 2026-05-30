@@ -71,25 +71,28 @@ export default function RewardPopup({ open, tier, userName, energyLevel, onClose
             <ConfettiPiece key={p.id} color={p.color} left={p.left} delay={p.delay} duration={p.duration} />
           ))}
 
-          {/* Backdrop */}
+          {/* Backdrop + centered flex container */}
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={chosen ? onClose : undefined}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1050, backdropFilter: 'blur(3px)' }}
-          />
-
-          {/* Modal */}
+            style={{
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+              zIndex: 1050, backdropFilter: 'blur(3px)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: '0 20px',
+            }}
+          >
+          {/* Modal — stop click propagating to backdrop */}
           <motion.div
+            onClick={e => e.stopPropagation()}
             initial={{ scale: 0.7, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.8, opacity: 0 }}
             transition={{ type: 'spring', damping: 20, stiffness: 260 }}
             style={{
-              position: 'fixed', top: '50%', left: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: 'calc(100% - 40px)', maxWidth: 400,
+              width: '100%', maxWidth: 400,
               background: 'var(--color-surface)', borderRadius: 24,
-              padding: '28px 24px 24px', zIndex: 1051, textAlign: 'center',
+              padding: '28px 24px 24px', textAlign: 'center',
               boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
             }}
           >
@@ -159,6 +162,7 @@ export default function RewardPopup({ open, tier, userName, energyLevel, onClose
                 </button>
               </>
             )}
+          </motion.div>
           </motion.div>
         </>
       )}
