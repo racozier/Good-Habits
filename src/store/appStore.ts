@@ -24,7 +24,7 @@ export const useAppStore = create<AppState>((set) => ({
   theme: 'warm',
   todayDate: today(),
   energyLevel: 5,
-  userName: 'Friend',
+  userName: 'Ada',
   navigate: (screen) => set({ screen }),
   setTheme: (theme) => set({ theme }),
   setEnergyLevel: (energyLevel) => set({ energyLevel }),

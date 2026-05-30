@@ -1,18 +1,18 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Mic, MicOff, Trash2, Repeat, ChevronDown, ChevronUp, Check } from 'lucide-react';
+import { Plus, Mic, MicOff, Trash2, Repeat, ChevronDown, ChevronUp, Check, Sparkles } from 'lucide-react';
 import { db } from '../../db';
 import { today, uid } from '../../utils/dateUtils';
 import { calcTaskProgress } from '../../utils/progress';
 import { useSpeechToText } from '../../hooks/useSpeechToText';
 import ProgressBar from '../ui/ProgressBar';
 import Modal from '../ui/Modal';
-import type { Task, RecurringTask, Difficulty, TaskColor } from '../../types';
+import type { Task, RecurringTask, Difficulty, TaskColor, LifeGoal } from '../../types';
 import { useAppStore } from '../../store/appStore';
 
 const COLORS: { id: TaskColor; label: string; hex: string }[] = [
   { id: 'physical', label: 'Physical', hex: '#F5A07A' },
-  { id: 'stress', label: 'Challenge', hex: '#E8916A' },
+  { id: 'stress', label: 'Important', hex: '#D94545' },
   { id: 'growth', label: 'Growth', hex: '#5B9EA0' },
   { id: 'environment', label: 'Environment', hex: '#C8D5A0' },
   { id: 'general', label: 'General', hex: '#F7DC8A' },
@@ -25,18 +25,19 @@ export default function TasksScreen() {
   const { energyLevel } = useAppStore();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [recurring, setRecurring] = useState<RecurringTask[]>([]);
+  const [lifeGoals, setLifeGoals] = useState<LifeGoal[]>([]);
   const [input, setInput] = useState('');
   const [difficulty, setDifficulty] = useState<Difficulty>(1);
   const [color, setColor] = useState<TaskColor>('general');
   const [showRecurring, setShowRecurring] = useState(false);
+  const [showLifeGoals, setShowLifeGoals] = useState(false);
   const [editMode, setEditMode] = useState(false);
-  // recurring day picker modal
   const [pendingRecurTask, setPendingRecurTask] = useState<Task | null>(null);
   const [recurDays, setRecurDays] = useState<number[]>([]);
 
   const { listening, start, stop } = useSpeechToText((text) => setInput(prev => prev + text));
 
-  useEffect(() => { loadTasks(); loadRecurring(); }, []);
+  useEffect(() => { loadTasks(); loadRecurring(); loadLifeGoals(); }, []);
 
   async function loadTasks() {
     const t = await db.tasks.where('date').equals(today()).toArray();
@@ -48,14 +49,20 @@ export default function TasksScreen() {
     setRecurring(r);
   }
 
-  async function addTask() {
-    if (!input.trim()) return;
+  async function loadLifeGoals() {
+    const g = await db.lifeGoals.toArray();
+    setLifeGoals(g);
+  }
+
+  async function addTask(overrideText?: string, overrideDiff?: Difficulty, overrideColor?: TaskColor) {
+    const text = (overrideText ?? input).trim();
+    if (!text) return;
     const task: Task = {
-      id: uid(), text: input.trim(), difficulty, color,
+      id: uid(), text, difficulty: overrideDiff ?? difficulty, color: overrideColor ?? color,
       completed: false, isRecurring: false, date: today(), createdAt: Date.now()
     };
     await db.tasks.add(task);
-    setInput('');
+    if (!overrideText) setInput('');
     loadTasks();
   }
 
@@ -116,14 +123,12 @@ export default function TasksScreen() {
   const regularTasks = tasks.filter(t => !t.isRecurring);
   const recurringTasksToday = tasks.filter(t => t.isRecurring);
 
-  // Highlight recurring tasks that match today's day
   const todayRecurring = recurring.filter(rt => rt.days.length === 0 || rt.days.includes(todayDow));
   const otherRecurring = recurring.filter(rt => rt.days.length > 0 && !rt.days.includes(todayDow));
 
   return (
     <div className="screen" style={{ padding: '0 16px 80px' }}>
-      <div style={{ padding: '16px 4px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: 'var(--color-text)' }}>Today's Tasks</h2>
+      <div style={{ padding: '16px 4px 8px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
         <button onClick={() => setEditMode(e => !e)} className="btn-ghost" style={{ fontSize: 13, padding: '6px 12px' }}>
           {editMode ? 'Done' : 'Edit'}
         </button>
@@ -183,9 +188,51 @@ export default function TasksScreen() {
           ))}
         </div>
 
-        <button className="btn-primary" onClick={addTask} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+        <button className="btn-primary" onClick={() => addTask()} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
           <Plus size={18} /> Add Task
         </button>
+      </div>
+
+      {/* Life goals quick-pick */}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <button onClick={() => setShowLifeGoals(s => !s)} style={{
+          background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center',
+          gap: 8, color: 'var(--color-text)', fontWeight: 600, fontSize: 15, width: '100%', padding: 0
+        }}>
+          <Sparkles size={16} color="var(--color-primary)" />
+          Quick-add from goals
+          {showLifeGoals ? <ChevronUp size={16} style={{ marginLeft: 'auto' }} /> : <ChevronDown size={16} style={{ marginLeft: 'auto' }} />}
+        </button>
+        <AnimatePresence>
+          {showLifeGoals && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+              style={{ overflow: 'hidden' }}>
+              <div style={{ paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {lifeGoals.map(g => {
+                  const colorHex = COLORS.find(c => c.id === g.category)?.hex || '#ccc';
+                  const alreadyAdded = tasks.some(t => t.text === g.text && t.date === today());
+                  return (
+                    <button key={g.id} onClick={() => !alreadyAdded && addTask(g.text, g.difficulty, g.category)}
+                      disabled={alreadyAdded}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '10px 12px', borderRadius: 12,
+                        border: '1.5px solid var(--color-border)',
+                        background: alreadyAdded ? 'var(--color-bg)' : 'var(--color-surface)',
+                        cursor: alreadyAdded ? 'default' : 'pointer',
+                        opacity: alreadyAdded ? 0.5 : 1, textAlign: 'left',
+                      }}>
+                      <div style={{ width: 10, height: 10, borderRadius: '50%', background: colorHex, flexShrink: 0 }} />
+                      <span style={{ flex: 1, fontSize: 14, color: 'var(--color-text)' }}>{g.text}</span>
+                      <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>·{g.difficulty}</span>
+                      {alreadyAdded && <Check size={14} color="green" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Recurring panel */}
@@ -225,7 +272,7 @@ export default function TasksScreen() {
         </div>
       )}
 
-      <TaskList title="Tasks" tasks={regularTasks} onToggle={toggleTask} onDelete={deleteTask} onMakeRecurring={openRecurringPicker} editMode={editMode} />
+      <TaskList title="Today's Tasks" tasks={regularTasks} onToggle={toggleTask} onDelete={deleteTask} onMakeRecurring={openRecurringPicker} editMode={editMode} />
       {recurringTasksToday.length > 0 && (
         <TaskList title="Recurring" tasks={recurringTasksToday} onToggle={toggleTask} onDelete={deleteTask} onMakeRecurring={openRecurringPicker} editMode={editMode} />
       )}

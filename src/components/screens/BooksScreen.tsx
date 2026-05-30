@@ -40,8 +40,8 @@ export default function BooksScreen() {
   useEffect(() => { loadBooks(); }, []);
 
   async function loadBooks() {
-    const b = await db.books.orderBy('addedAt').reverse().toArray();
-    setBooks(b);
+    const b = await db.books.toArray();
+    setBooks(b.sort((a, z) => z.addedAt - a.addedAt));
   }
 
   async function loadNotes(bookId: string) {
@@ -250,8 +250,7 @@ export default function BooksScreen() {
   // Book list view
   return (
     <div className="screen" style={{ padding: '0 16px 80px' }}>
-      <div style={{ padding: '16px 4px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: 'var(--color-text)' }}>Books</h2>
+      <div style={{ padding: '16px 4px 12px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
         <button onClick={() => setShowAdd(s => !s)} style={{
           background: 'var(--color-primary)', border: 'none', borderRadius: 12, padding: '8px 14px',
           color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 600

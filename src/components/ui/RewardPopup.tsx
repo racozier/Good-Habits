@@ -8,7 +8,6 @@ import type { Reward } from '../../types';
 interface Props {
   open: boolean;
   tier: 1 | 2 | 3 | 4;
-  userName: string;
   energyLevel: number;
   onClose: () => void;
 }
@@ -39,7 +38,7 @@ function ConfettiPiece({ color, left, delay, duration }: { color: string; left: 
   );
 }
 
-export default function RewardPopup({ open, tier, userName, energyLevel, onClose }: Props) {
+export default function RewardPopup({ open, tier, energyLevel, onClose }: Props) {
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [chosen, setChosen] = useState<Reward | null>(null);
 
@@ -106,7 +105,7 @@ export default function RewardPopup({ open, tier, userName, energyLevel, onClose
               <>
                 <div style={{ fontSize: 52, marginBottom: 8 }}>🎉</div>
                 <h2 style={{ fontSize: 22, fontWeight: 800, margin: '0 0 6px', color: 'var(--color-text)' }}>
-                  Congratulations, {userName}!
+                  Congratulations, Ada!
                 </h2>
                 <p style={{ color: 'var(--color-text-muted)', fontSize: 15, margin: '0 0 20px' }}>
                   {TIER_MESSAGES[tier]}

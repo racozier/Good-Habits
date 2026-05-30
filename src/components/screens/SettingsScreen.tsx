@@ -1,19 +1,9 @@
-import { useState } from 'react';
 import { Sun, Moon } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { db } from '../../db';
 
 export default function SettingsScreen() {
-  const { theme, setTheme, userName, setUserName } = useAppStore();
-  const [name, setName] = useState(userName);
-  const [saved, setSaved] = useState(false);
-
-  async function saveName() {
-    setUserName(name);
-    await db.appSettings.update('settings', { userName: name });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }
+  const { theme, setTheme } = useAppStore();
 
   async function exportData() {
     const [tasks, diary, sleep, books] = await Promise.all([
@@ -23,7 +13,7 @@ export default function SettingsScreen() {
     const blob = new Blob([JSON.stringify({ tasks, diary, sleep, books }, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `good-habits-export-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `bloomia-export-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
   }
 
@@ -31,14 +21,6 @@ export default function SettingsScreen() {
     <div className="screen" style={{ padding: '0 16px 80px' }}>
       <div style={{ padding: '16px 4px 12px' }}>
         <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: 'var(--color-text)' }}>Settings</h2>
-      </div>
-
-      <div className="card" style={{ marginBottom: 12 }}>
-        <p style={{ fontSize: 15, fontWeight: 700, margin: '0 0 10px' }}>Your name</p>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input className="input" value={name} onChange={e => { setName(e.target.value); setSaved(false); }} style={{ flex: 1 }} />
-          <button className="btn-primary" onClick={saveName}>{saved ? '✓' : 'Save'}</button>
-        </div>
       </div>
 
       <div className="card" style={{ marginBottom: 12 }}>
@@ -84,7 +66,7 @@ export default function SettingsScreen() {
 
       <div className="card" style={{ textAlign: 'center' }}>
         <p style={{ fontSize: 18, margin: '0 0 4px' }}>🌸</p>
-        <p style={{ fontWeight: 700, fontSize: 15, margin: '0 0 4px' }}>Good Habits</p>
+        <p style={{ fontWeight: 700, fontSize: 15, margin: '0 0 4px' }}>Bloomia</p>
         <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: 0 }}>Your daily motivation companion</p>
       </div>
     </div>

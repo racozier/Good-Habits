@@ -45,7 +45,7 @@ function weatherDesc(code: number): string {
 }
 
 export default function GreetScreen() {
-  const { navigate, userName } = useAppStore();
+  const { navigate } = useAppStore();
   const [weather, setWeather] = useState<Weather | null>(null);
   const [weatherError, setWeatherError] = useState(false);
 
@@ -122,7 +122,7 @@ export default function GreetScreen() {
             {formatDate(today())}
           </p>
           <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--color-text)', margin: 0 }}>
-            Hello, {userName}! 👋
+            Hello, Ada! 👋
           </h1>
         </div>
 

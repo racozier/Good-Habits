@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Droplets, Dumbbell, BookOpen, Sparkles, Trash2, Plus, Check } from 'lucide-react';
+import { Droplets, Dumbbell, BookOpen, Sparkles, Trash2 } from 'lucide-react';
 import { db } from '../../db';
 import { today, uid, getWeekStart } from '../../utils/dateUtils';
 import { calcHealthProgress, calcEnvironmentProgress } from '../../utils/progress';
 import ProgressBar from '../ui/ProgressBar';
 import CountdownTimer from '../ui/CountdownTimer';
 import Modal from '../ui/Modal';
-import type { WaterEntry, WorkoutEntry, ReadingEntry, CleaningEntry, FinancialTask } from '../../types';
+import type { WorkoutEntry, ReadingEntry, CleaningEntry, IncomeEntry } from '../../types';
 
 export default function HealthScreen() {
   const date = today();
@@ -20,12 +19,13 @@ export default function HealthScreen() {
   const [timesReached, setTimesReached] = useState(0);
   const [todayReadingMins, setTodayReadingMins] = useState(0);
   const [cleaningMins, setCleaningMins] = useState(0);
-  const [financialTasks, setFinancialTasks] = useState<FinancialTask[]>([]);
+  const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([]);
   const [showWorkoutInput, setShowWorkoutInput] = useState(false);
   const [workoutMins, setWorkoutMins] = useState('');
   const [showReadingTimer, setShowReadingTimer] = useState(false);
-  const [showFinAdd, setShowFinAdd] = useState(false);
-  const [finInput, setFinInput] = useState('');
+  const [incomeAmount, setIncomeAmount] = useState('');
+  const [incomeNote, setIncomeNote] = useState('');
+  const [showIncomeAdd, setShowIncomeAdd] = useState(false);
 
   useEffect(() => { loadAll(); }, []);
 
@@ -46,15 +46,14 @@ export default function HealthScreen() {
     const cleaning = await db.cleaningEntries.where('date').equals(date).toArray();
     setCleaningMins(cleaning.reduce((s, c) => s + c.minutes, 0));
 
-    const fin = await db.financialTasks.where('date').equals(date).toArray();
-    setFinancialTasks(fin);
+    const income = await db.incomeEntries.where('date').equals(date).toArray();
+    setIncomeEntries(income);
   }
 
   async function addWater(ml: number) {
     if (ml > 0) {
       await db.waterEntries.add({ id: uid(), date, ml });
     } else {
-      // Subtract: reduce from most-recent entries until amount covered
       const entries = await db.waterEntries.where('date').equals(date).toArray();
       entries.sort((a, b) => a.id.localeCompare(b.id));
       let toRemove = Math.abs(ml);
@@ -95,21 +94,18 @@ export default function HealthScreen() {
     loadAll();
   }
 
-  async function addFinancial() {
-    if (!finInput.trim()) return;
-    await db.financialTasks.add({ id: uid(), date, description: finInput.trim(), completed: false });
-    setFinInput('');
-    setShowFinAdd(false);
+  async function addIncome() {
+    const amount = parseFloat(incomeAmount);
+    if (isNaN(amount) || amount <= 0) return;
+    await db.incomeEntries.add({ id: uid(), date, amount, note: incomeNote.trim() || undefined });
+    setIncomeAmount('');
+    setIncomeNote('');
+    setShowIncomeAdd(false);
     loadAll();
   }
 
-  async function toggleFinancial(id: string, completed: boolean) {
-    await db.financialTasks.update(id, { completed });
-    loadAll();
-  }
-
-  async function deleteFinancial(id: string) {
-    await db.financialTasks.delete(id);
+  async function deleteIncome(id: string) {
+    await db.incomeEntries.delete(id);
     loadAll();
   }
 
@@ -121,18 +117,15 @@ export default function HealthScreen() {
 
   const glasses = Math.floor(waterMl / 250);
   const cleaningDone = cleaningMins >= 20;
-  const finDone = financialTasks.filter(f => f.completed).length;
+  const totalIncome = incomeEntries.reduce((s, e) => s + e.amount, 0);
   const healthProg = calcHealthProgress(waterMl, weeklyWorkout, workoutGoal, todayReadingMins);
-  const envProg = calcEnvironmentProgress(cleaningDone, financialTasks.length, finDone);
+  const envProg = calcEnvironmentProgress(cleaningDone);
 
   return (
     <div className="screen" style={{ padding: '0 16px 80px' }}>
-      <div style={{ padding: '16px 4px 12px' }}>
-        <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: 'var(--color-text)' }}>Health & Environment</h2>
-      </div>
 
       {/* Inner Environment */}
-      <div className="card" style={{ marginBottom: 12 }}>
+      <div className="card" style={{ marginTop: 16, marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <Sparkles size={18} color="var(--color-primary)" />
           <span style={{ fontWeight: 700, fontSize: 16, color: 'var(--color-text)' }}>Inner Environment</span>
@@ -148,7 +141,6 @@ export default function HealthScreen() {
           <span style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--color-text-muted)' }}>{waterMl} / 2000 ml</span>
         </div>
 
-        {/* Glass counter row */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, marginBottom: 14 }}>
           <button onClick={() => addWater(-250)} disabled={waterMl <= 0} style={{
             width: 44, height: 44, borderRadius: '50%', border: '2px solid var(--color-border)',
@@ -167,21 +159,6 @@ export default function HealthScreen() {
         </div>
 
         <ProgressBar value={Math.min((waterMl / 2000) * 100, 100)} height={8} showPercent={false} color="#5B9EA0" />
-
-        {/* Quick-add other amounts */}
-        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-          {[{ ml: 150, label: 'small\n150ml' }, { ml: 330, label: 'can\n330ml' }, { ml: 500, label: 'bottle\n500ml' }].map(({ ml, label }) => (
-            <div key={ml} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <button onClick={() => addWater(ml)} className="btn-ghost" style={{ fontSize: 12, padding: '7px 0', width: '100%' }}>
-                +{ml}ml
-              </button>
-              <button onClick={() => addWater(-ml)} disabled={waterMl < ml} className="btn-ghost"
-                style={{ fontSize: 12, padding: '7px 0', width: '100%', opacity: waterMl >= ml ? 1 : 0.35, color: 'var(--color-text-muted)' }}>
-                −{ml}ml
-              </button>
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* Workout */}
@@ -252,43 +229,44 @@ export default function HealthScreen() {
         </button>
       </div>
 
-      {/* Financial */}
+      {/* Income */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
           <span style={{ fontSize: 18 }}>💰</span>
-          <span style={{ fontWeight: 600, fontSize: 15 }}>Financial</span>
-          <button onClick={() => setShowFinAdd(true)} style={{
-            marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer'
-          }}>
-            <Plus size={20} color="var(--color-primary)" />
-          </button>
+          <span style={{ fontWeight: 600, fontSize: 15 }}>Income</span>
+          {totalIncome > 0 && (
+            <span style={{ marginLeft: 'auto', fontWeight: 700, fontSize: 15, color: 'var(--color-primary)' }}>
+              ${totalIncome.toFixed(2)}
+            </span>
+          )}
         </div>
-        {financialTasks.map(ft => (
-          <div key={ft.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-            <button onClick={() => toggleFinancial(ft.id, !ft.completed)} style={{
-              width: 24, height: 24, borderRadius: '50%', border: '2px solid var(--color-primary)',
-              background: ft.completed ? 'var(--color-primary)' : 'transparent',
-              cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>
-              {ft.completed && <Check size={12} color="white" strokeWidth={3} />}
-            </button>
-            <span style={{ flex: 1, fontSize: 14, textDecoration: ft.completed ? 'line-through' : 'none',
-              color: ft.completed ? 'var(--color-text-muted)' : 'var(--color-text)' }}>{ft.description}</span>
-            <button onClick={() => deleteFinancial(ft.id)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+        {incomeEntries.map(e => (
+          <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+            <span style={{ flex: 1, fontSize: 14, color: 'var(--color-text)' }}>
+              ${e.amount.toFixed(2)}{e.note ? ` · ${e.note}` : ''}
+            </span>
+            <button onClick={() => deleteIncome(e.id)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
               <Trash2 size={14} color="var(--color-text-muted)" />
             </button>
           </div>
         ))}
-        {financialTasks.length === 0 && (
-          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: 0 }}>No financial goals today</p>
-        )}
-        {showFinAdd && (
-          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <input className="input" placeholder="Financial goal..." value={finInput}
-              onChange={e => setFinInput(e.target.value)} style={{ flex: 1 }} />
-            <button className="btn-primary" onClick={addFinancial}>Add</button>
-            <button className="btn-ghost" onClick={() => setShowFinAdd(false)}>✕</button>
+        {showIncomeAdd ? (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <input className="input" type="number" placeholder="Amount ($)" value={incomeAmount}
+                onChange={e => setIncomeAmount(e.target.value)} style={{ flex: 1 }} />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input className="input" placeholder="Note (optional)" value={incomeNote}
+                onChange={e => setIncomeNote(e.target.value)} style={{ flex: 1 }} />
+              <button className="btn-primary" onClick={addIncome}>Add</button>
+              <button className="btn-ghost" onClick={() => setShowIncomeAdd(false)}>✕</button>
+            </div>
           </div>
+        ) : (
+          <button onClick={() => setShowIncomeAdd(true)} className="btn-primary" style={{ width: '100%', marginTop: 8 }}>
+            + Log income
+          </button>
         )}
       </div>
 

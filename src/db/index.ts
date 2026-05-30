@@ -2,7 +2,8 @@ import Dexie, { type Table } from 'dexie';
 import type {
   Task, RecurringTask, WaterEntry, WorkoutEntry, WorkoutGoal,
   ReadingEntry, CleaningEntry, FinancialTask, Book, BookNote, Reward,
-  FavoriteBook, LifeGoal, DiaryEntry, SleepEntry, DaySettings, AppSettings
+  FavoriteBook, LifeGoal, DiaryEntry, SleepEntry, DaySettings, AppSettings,
+  IncomeEntry
 } from '../types';
 
 export class GoodHabitsDB extends Dexie {
@@ -16,6 +17,7 @@ export class GoodHabitsDB extends Dexie {
   financialTasks!: Table<FinancialTask>;
   books!: Table<Book>;
   bookNotes!: Table<BookNote>;
+  incomeEntries!: Table<IncomeEntry>;
   rewards!: Table<Reward>;
   favoriteBook!: Table<FavoriteBook>;
   lifeGoals!: Table<LifeGoal>;
@@ -48,6 +50,10 @@ export class GoodHabitsDB extends Dexie {
     this.version(2).stores({
       bookNotes: 'id, bookId',
     });
+    // v3: adds incomeEntries table
+    this.version(3).stores({
+      incomeEntries: 'id, date',
+    });
   }
 }
 
@@ -60,7 +66,7 @@ export async function seedDefaultData() {
 
   await db.appSettings.put({
     id: 'settings',
-    userName: 'Friend',
+    userName: 'Ada',
     theme: 'warm',
     streak: { current: 0, longest: 0, lastCompletedDate: '' },
   });

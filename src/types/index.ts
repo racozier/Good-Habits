@@ -68,6 +68,13 @@ export interface FinancialTask {
   completed: boolean;
 }
 
+export interface IncomeEntry {
+  id: string;
+  date: string;
+  amount: number;
+  note?: string;
+}
+
 export interface Book {
   id: string;
   title: string;

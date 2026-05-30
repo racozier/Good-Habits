@@ -23,14 +23,8 @@ export function calcHealthProgress(
   return Math.round(((water + workout + reading) / 3) * 100);
 }
 
-export function calcEnvironmentProgress(
-  cleaningDone: boolean,
-  financialTotal: number,
-  financialDone: number
-): number {
-  const cleaning = cleaningDone ? 1 : 0;
-  const financial = financialTotal === 0 ? 0 : financialDone / financialTotal;
-  return Math.round(((cleaning + financial) / 2) * 100);
+export function calcEnvironmentProgress(cleaningDone: boolean): number {
+  return cleaningDone ? 100 : 0;
 }
 
 export function calcLifeProgress(lifeTasksAddedToday: number): number {

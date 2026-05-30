@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { db } from '../../db';
-import { formatShortDate, addDays } from '../../utils/dateUtils';
+import { formatShortDate } from '../../utils/dateUtils';
 import Modal from '../ui/Modal';
 import type { Task } from '../../types';
 
 const TASK_COLORS: Record<string, string> = {
-  physical: '#F5A07A', stress: '#E8916A', growth: '#5B9EA0', environment: '#C8D5A0', general: '#F7DC8A'
+  physical: '#F5A07A', stress: '#D94545', growth: '#5B9EA0', environment: '#C8D5A0', general: '#F7DC8A'
+};
+
+const TASK_LABELS: Record<string, string> = {
+  physical: 'Physical', stress: 'Important', growth: 'Growth', environment: 'Environment', general: 'General'
 };
 
 interface DayMetrics {
@@ -20,6 +24,14 @@ interface DayMetrics {
   sleepDuration: number | null;
   sleepQuality: string | null;
   diaryMood: string | null;
+}
+
+interface MonthlySummary {
+  totalIncome: number;
+  totalWorkoutMins: number;
+  avgSleepHours: number | null;
+  taskColorCounts: Record<string, number>;
+  totalTasks: number;
 }
 
 function getMonthDays(year: number, month: number): (string | null)[] {
@@ -40,8 +52,9 @@ export default function CalendarScreen() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dayMetrics, setDayMetrics] = useState<DayMetrics | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
+  const [monthlySummary, setMonthlySummary] = useState<MonthlySummary | null>(null);
 
-  useEffect(() => { loadTasks(); }, [year, month]);
+  useEffect(() => { loadTasks(); loadMonthlySummary(); }, [year, month]);
 
   async function loadTasks() {
     const start = `${year}-${String(month + 1).padStart(2, '0')}-01`;
@@ -50,6 +63,30 @@ export default function CalendarScreen() {
     const grouped: Record<string, Task[]> = {};
     tasks.forEach(t => { (grouped[t.date] ??= []).push(t); });
     setTasksByDate(grouped);
+  }
+
+  async function loadMonthlySummary() {
+    const monthStr = `${year}-${String(month + 1).padStart(2, '0')}`;
+    const start = `${monthStr}-01`;
+    const end = `${monthStr}-31`;
+
+    const [tasks, workouts, sleep, income] = await Promise.all([
+      db.tasks.where('date').between(start, end, true, true).toArray(),
+      db.workoutEntries.where('date').between(start, end, true, true).toArray(),
+      db.sleepEntries.where('date').between(start, end, true, true).toArray(),
+      db.incomeEntries.where('date').between(start, end, true, true).toArray(),
+    ]);
+
+    const totalIncome = income.reduce((s, e) => s + e.amount, 0);
+    const totalWorkoutMins = workouts.reduce((s, w) => s + w.minutes, 0);
+    const avgSleepHours = sleep.length > 0
+      ? Math.round((sleep.reduce((s, e) => s + e.durationMinutes, 0) / sleep.length) / 6) / 10
+      : null;
+
+    const taskColorCounts: Record<string, number> = {};
+    tasks.forEach(t => { taskColorCounts[t.color] = (taskColorCounts[t.color] || 0) + 1; });
+
+    setMonthlySummary({ totalIncome, totalWorkoutMins, avgSleepHours, taskColorCounts, totalTasks: tasks.length });
   }
 
   async function openDay(date: string) {
@@ -66,9 +103,6 @@ export default function CalendarScreen() {
       db.diaryEntries.where('date').equals(date).first(),
     ]);
 
-    // Books completed on this date (we approximate by checking tasks with "finished" pattern)
-    // Actually let's check books whose completion date is this date - we don't store that,
-    // so we check reading entries with bookId and the book is completed
     const readBookIds = [...new Set(readings.filter(r => r.bookId).map(r => r.bookId!))];
     const completedBooks = booksAll
       .filter(b => b.completed && readBookIds.includes(b.id))
@@ -98,7 +132,7 @@ export default function CalendarScreen() {
 
   const days = getMonthDays(year, month);
   const monthName = new Date(year, month).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
   const MOOD_EMOJI: Record<string, string> = { great: '😊', okay: '😐', bad: '😔' };
   const QUALITY_EMOJI: Record<string, string> = { great: '😴', okay: '😐', bad: '😫' };
@@ -166,11 +200,68 @@ export default function CalendarScreen() {
           {Object.entries(TASK_COLORS).map(([key, color]) => (
             <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <div style={{ width: 10, height: 10, borderRadius: '50%', background: color }} />
-              <span style={{ fontSize: 12, color: 'var(--color-text-muted)', textTransform: 'capitalize' }}>{key}</span>
+              <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{TASK_LABELS[key]}</span>
             </div>
           ))}
         </div>
       </div>
+
+      {/* Monthly summary */}
+      {monthlySummary && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <p style={{ fontSize: 15, fontWeight: 700, margin: '0 0 14px', color: 'var(--color-text)' }}>
+            📊 {monthName} Summary
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+            {monthlySummary.totalIncome > 0 && (
+              <div style={{ background: 'var(--color-bg)', borderRadius: 12, padding: '10px 12px' }}>
+                <p style={{ margin: '0 0 2px', fontSize: 12, color: 'var(--color-text-muted)' }}>💰 Income</p>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: 16, color: 'var(--color-text)' }}>${monthlySummary.totalIncome.toFixed(2)}</p>
+              </div>
+            )}
+            {monthlySummary.totalWorkoutMins > 0 && (
+              <div style={{ background: 'var(--color-bg)', borderRadius: 12, padding: '10px 12px' }}>
+                <p style={{ margin: '0 0 2px', fontSize: 12, color: 'var(--color-text-muted)' }}>💪 Workout</p>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: 16, color: 'var(--color-text)' }}>{monthlySummary.totalWorkoutMins} min</p>
+              </div>
+            )}
+            {monthlySummary.avgSleepHours !== null && (
+              <div style={{ background: 'var(--color-bg)', borderRadius: 12, padding: '10px 12px' }}>
+                <p style={{ margin: '0 0 2px', fontSize: 12, color: 'var(--color-text-muted)' }}>😴 Avg Sleep</p>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: 16, color: 'var(--color-text)' }}>{monthlySummary.avgSleepHours}h</p>
+              </div>
+            )}
+            {monthlySummary.totalTasks > 0 && (
+              <div style={{ background: 'var(--color-bg)', borderRadius: 12, padding: '10px 12px' }}>
+                <p style={{ margin: '0 0 2px', fontSize: 12, color: 'var(--color-text-muted)' }}>✅ Tasks logged</p>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: 16, color: 'var(--color-text)' }}>{monthlySummary.totalTasks}</p>
+              </div>
+            )}
+          </div>
+          {monthlySummary.totalTasks > 0 && Object.keys(monthlySummary.taskColorCounts).length > 0 && (
+            <div>
+              <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 8 }}>Task breakdown</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {Object.entries(monthlySummary.taskColorCounts)
+                  .sort(([,a],[,b]) => b - a)
+                  .map(([cat, count]) => {
+                    const pct = Math.round((count / monthlySummary.totalTasks) * 100);
+                    return (
+                      <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: TASK_COLORS[cat], flexShrink: 0 }} />
+                        <span style={{ fontSize: 12, color: 'var(--color-text-muted)', width: 80 }}>{TASK_LABELS[cat]}</span>
+                        <div style={{ flex: 1, height: 6, background: 'var(--color-bg)', borderRadius: 4, overflow: 'hidden' }}>
+                          <div style={{ width: `${pct}%`, height: '100%', background: TASK_COLORS[cat], borderRadius: 4 }} />
+                        </div>
+                        <span style={{ fontSize: 12, color: 'var(--color-text-muted)', width: 36, textAlign: 'right' }}>{pct}%</span>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Day detail modal */}
       <Modal open={!!selectedDate} onClose={() => setSelectedDate(null)}
@@ -180,7 +271,6 @@ export default function CalendarScreen() {
         ) : dayMetrics ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-            {/* Mood row */}
             {(dayMetrics.diaryMood || dayMetrics.sleepQuality) && (
               <div style={{ display: 'flex', gap: 12 }}>
                 {dayMetrics.diaryMood && (
@@ -200,7 +290,6 @@ export default function CalendarScreen() {
               </div>
             )}
 
-            {/* Health metrics */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               {[
                 { icon: '💧', label: 'Water', value: dayMetrics.waterMl > 0 ? `${dayMetrics.waterMl}ml` : '—' },
@@ -215,7 +304,6 @@ export default function CalendarScreen() {
               ))}
             </div>
 
-            {/* Book completions */}
             {dayMetrics.booksCompleted.length > 0 && (
               <div style={{ background: 'var(--color-secondary)', borderRadius: 12, padding: '10px 14px' }}>
                 <p style={{ margin: '0 0 4px', fontSize: 12, color: 'var(--color-text-muted)' }}>📚 Books finished</p>
@@ -225,7 +313,6 @@ export default function CalendarScreen() {
               </div>
             )}
 
-            {/* Tasks */}
             <div>
               <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: 8 }}>
                 Tasks — {dayMetrics.tasks.filter(t => t.completed).length}/{dayMetrics.tasks.length} completed
