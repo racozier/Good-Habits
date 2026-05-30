@@ -109,3 +109,13 @@ body {
 * { scrollbar-width: none; }
 
 textarea { font-family: inherit; }
+
+@keyframes confetti-fall {
+  0%   { transform: translateY(-10px) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(100dvh) rotate(720deg); opacity: 0; }
+}
+
+@keyframes confetti-sway {
+  0%, 100% { margin-left: 0; }
+  50%       { margin-left: 20px; }
+}

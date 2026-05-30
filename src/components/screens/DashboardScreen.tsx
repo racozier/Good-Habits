@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { CheckSquare, Heart, Leaf, Sparkles, BookOpen, Gift, Calendar, BookMarked, Moon, Flame } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
@@ -6,9 +6,10 @@ import { db } from '../../db';
 import { today, getGreeting, getWeekStart } from '../../utils/dateUtils';
 import {
   calcTaskProgress, calcHealthProgress, calcEnvironmentProgress,
-  calcLifeProgress, calcMasterProgress
+  calcLifeProgress, calcMasterProgress, getTier
 } from '../../utils/progress';
 import ProgressBar from '../ui/ProgressBar';
+import RewardPopup from '../ui/RewardPopup';
 import type { Screen } from '../../store/appStore';
 
 interface SectionProgress { tasks: number; health: number; env: number; life: number; }
@@ -29,9 +30,15 @@ export default function DashboardScreen() {
   const [progress, setProgress] = useState<SectionProgress>({ tasks: 0, health: 0, env: 0, life: 0 });
   const [streak, setStreak] = useState(0);
   const [showEnergySet, setShowEnergySet] = useState(false);
+  const [rewardPopup, setRewardPopup] = useState<{ tier: 1|2|3|4 } | null>(null);
+  const prevMasterRef = useRef<number>(-1);
 
   useEffect(() => {
     loadProgress();
+    // Refresh progress when user returns to this tab
+    const onFocus = () => loadProgress();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, []);
 
   async function loadProgress() {
@@ -63,7 +70,25 @@ export default function DashboardScreen() {
     const settings = await db.appSettings.get('settings');
     setStreak(settings?.streak.current ?? 0);
 
-    setProgress({ tasks: taskProg, health: healthProg, env: envProg, life: 0 });
+    const newProgress = { tasks: taskProg, health: healthProg, env: envProg, life: 0 };
+    setProgress(newProgress);
+
+    // Check reward tier crossings
+    const newMaster = calcMasterProgress(taskProg, healthProg, envProg, 0);
+    const prevMaster = prevMasterRef.current;
+    if (prevMaster >= 0) {
+      const claimedKey = `reward-claimed-${date}`;
+      const claimed: number[] = JSON.parse(localStorage.getItem(claimedKey) || '[]');
+      const thresholds: [number, 1|2|3|4][] = [[25,1],[50,2],[75,3],[100,4]];
+      for (const [threshold, tier] of thresholds) {
+        if (prevMaster < threshold && newMaster >= threshold && !claimed.includes(tier)) {
+          localStorage.setItem(claimedKey, JSON.stringify([...claimed, tier]));
+          setRewardPopup({ tier });
+          break;
+        }
+      }
+    }
+    prevMasterRef.current = newMaster;
   }
 
   const master = calcMasterProgress(progress.tasks, progress.health, progress.env, progress.life);
@@ -201,6 +226,14 @@ export default function DashboardScreen() {
           <span style={{ fontWeight: 600, fontSize: 15, color: 'var(--color-text)' }}>Rewards & Life Goals</span>
         </button>
       </div>
+
+      <RewardPopup
+        open={!!rewardPopup}
+        tier={rewardPopup?.tier ?? 1}
+        userName={userName}
+        energyLevel={energyLevel}
+        onClose={() => setRewardPopup(null)}
+      />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import type {
   Task, RecurringTask, WaterEntry, WorkoutEntry, WorkoutGoal,
-  ReadingEntry, CleaningEntry, FinancialTask, Book, Reward,
+  ReadingEntry, CleaningEntry, FinancialTask, Book, BookNote, Reward,
   FavoriteBook, LifeGoal, DiaryEntry, SleepEntry, DaySettings, AppSettings
 } from '../types';
 
@@ -15,6 +15,7 @@ export class GoodHabitsDB extends Dexie {
   cleaningEntries!: Table<CleaningEntry>;
   financialTasks!: Table<FinancialTask>;
   books!: Table<Book>;
+  bookNotes!: Table<BookNote>;
   rewards!: Table<Reward>;
   favoriteBook!: Table<FavoriteBook>;
   lifeGoals!: Table<LifeGoal>;
@@ -35,6 +36,7 @@ export class GoodHabitsDB extends Dexie {
       cleaningEntries: 'id, date',
       financialTasks: 'id, date',
       books: 'id',
+      bookNotes: 'id, bookId',
       rewards: 'id, tier',
       favoriteBook: 'id',
       lifeGoals: 'id, category',

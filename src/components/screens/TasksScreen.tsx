@@ -6,6 +6,7 @@ import { today, uid } from '../../utils/dateUtils';
 import { calcTaskProgress } from '../../utils/progress';
 import { useSpeechToText } from '../../hooks/useSpeechToText';
 import ProgressBar from '../ui/ProgressBar';
+import Modal from '../ui/Modal';
 import type { Task, RecurringTask, Difficulty, TaskColor } from '../../types';
 import { useAppStore } from '../../store/appStore';
 
@@ -18,6 +19,7 @@ const COLORS: { id: TaskColor; label: string; hex: string }[] = [
 ];
 
 const DIFF_LABELS: Record<Difficulty, string> = { 1: 'Easy', 2: 'Medium', 3: 'Hard' };
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function TasksScreen() {
   const { energyLevel } = useAppStore();
@@ -28,6 +30,9 @@ export default function TasksScreen() {
   const [color, setColor] = useState<TaskColor>('general');
   const [showRecurring, setShowRecurring] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  // recurring day picker modal
+  const [pendingRecurTask, setPendingRecurTask] = useState<Task | null>(null);
+  const [recurDays, setRecurDays] = useState<number[]>([]);
 
   const { listening, start, stop } = useSpeechToText((text) => setInput(prev => prev + text));
 
@@ -64,9 +69,23 @@ export default function TasksScreen() {
     loadTasks();
   }
 
-  async function makeRecurring(task: Task) {
-    const rt: RecurringTask = { id: uid(), text: task.text, difficulty: task.difficulty, color: task.color };
+  function openRecurringPicker(task: Task) {
+    setPendingRecurTask(task);
+    setRecurDays([]);
+  }
+
+  async function saveRecurring() {
+    if (!pendingRecurTask) return;
+    const rt: RecurringTask = {
+      id: uid(),
+      text: pendingRecurTask.text,
+      difficulty: pendingRecurTask.difficulty,
+      color: pendingRecurTask.color,
+      days: recurDays,
+    };
     await db.recurringTasks.add(rt);
+    setPendingRecurTask(null);
+    setRecurDays([]);
     loadRecurring();
   }
 
@@ -86,11 +105,20 @@ export default function TasksScreen() {
     loadRecurring();
   }
 
+  function toggleRecurDay(day: number) {
+    setRecurDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
+  }
+
+  const todayDow = new Date().getDay();
   const maxDiff3 = energyLevel <= 4 ? 1 : energyLevel <= 7 ? 2 : 3;
   const currentDiff3Count = tasks.filter(t => t.difficulty === 3 && !t.completed).length;
   const progress = calcTaskProgress(tasks);
   const regularTasks = tasks.filter(t => !t.isRecurring);
-  const recurringTasks = tasks.filter(t => t.isRecurring);
+  const recurringTasksToday = tasks.filter(t => t.isRecurring);
+
+  // Highlight recurring tasks that match today's day
+  const todayRecurring = recurring.filter(rt => rt.days.length === 0 || rt.days.includes(todayDow));
+  const otherRecurring = recurring.filter(rt => rt.days.length > 0 && !rt.days.includes(todayDow));
 
   return (
     <div className="screen" style={{ padding: '0 16px 80px' }}>
@@ -121,14 +149,16 @@ export default function TasksScreen() {
           />
           <button
             onClick={listening ? stop : start}
-            style={{ background: listening ? 'var(--color-primary)' : 'var(--color-bg)',
-              border: '1.5px solid var(--color-border)', borderRadius: 12, padding: '0 14px', cursor: 'pointer' }}
+            style={{
+              background: listening ? 'var(--color-primary)' : 'var(--color-bg)',
+              border: '1.5px solid var(--color-border)', borderRadius: 12,
+              padding: '0 14px', cursor: 'pointer', flexShrink: 0
+            }}
           >
             {listening ? <MicOff size={20} color="white" /> : <Mic size={20} color="var(--color-primary)" />}
           </button>
         </div>
 
-        {/* Difficulty */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
           {([1, 2, 3] as Difficulty[]).map(d => (
             <button key={d} onClick={() => setDifficulty(d)} style={{
@@ -143,11 +173,11 @@ export default function TasksScreen() {
           ))}
         </div>
 
-        {/* Color */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
           {COLORS.map(c => (
             <button key={c.id} onClick={() => setColor(c.id)} title={c.label} style={{
-              width: 28, height: 28, borderRadius: '50%', border: color === c.id ? '3px solid var(--color-text)' : '2px solid transparent',
+              width: 28, height: 28, borderRadius: '50%',
+              border: color === c.id ? '3px solid var(--color-text)' : '2px solid transparent',
               background: c.hex, cursor: 'pointer', flexShrink: 0
             }} />
           ))}
@@ -158,7 +188,7 @@ export default function TasksScreen() {
         </button>
       </div>
 
-      {/* Recurring tasks panel */}
+      {/* Recurring panel */}
       {editMode && recurring.length > 0 && (
         <div className="card" style={{ marginBottom: 12 }}>
           <button onClick={() => setShowRecurring(r => !r)} style={{
@@ -173,33 +203,81 @@ export default function TasksScreen() {
             {showRecurring && (
               <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
                 style={{ overflow: 'hidden' }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, paddingTop: 12 }}>
-                  {recurring.map(rt => (
-                    <div key={rt.id} style={{ display: 'flex', alignItems: 'center', gap: 6,
-                      background: 'var(--color-bg)', borderRadius: 20, padding: '6px 12px',
-                      border: '1.5px solid var(--color-border)' }}>
-                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: COLORS.find(c => c.id === rt.color)?.hex || '#ccc' }} />
-                      <button onClick={() => addRecurringToToday(rt)} style={{ background: 'none', border: 'none',
-                        cursor: 'pointer', fontSize: 13, color: 'var(--color-text)', padding: 0 }}>
-                        {rt.text} <span style={{ color: 'var(--color-muted)', fontSize: 11 }}>·{rt.difficulty}</span>
-                      </button>
-                      <button onClick={() => deleteRecurring(rt.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                        <Trash2 size={13} color="var(--color-text-muted)" />
-                      </button>
+                {todayRecurring.length > 0 && (
+                  <div style={{ paddingTop: 12 }}>
+                    <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 8, fontWeight: 600 }}>TODAY</p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {todayRecurring.map(rt => <RecurChip key={rt.id} rt={rt} onAdd={() => addRecurringToToday(rt)} onDelete={() => deleteRecurring(rt.id)} added={!!tasks.find(t => t.text === rt.text)} />)}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
+                {otherRecurring.length > 0 && (
+                  <div style={{ paddingTop: 12 }}>
+                    <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 8, fontWeight: 600 }}>OTHER DAYS</p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {otherRecurring.map(rt => <RecurChip key={rt.id} rt={rt} onAdd={() => addRecurringToToday(rt)} onDelete={() => deleteRecurring(rt.id)} added={!!tasks.find(t => t.text === rt.text)} />)}
+                    </div>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       )}
 
-      {/* Task list */}
-      <TaskList title="Tasks" tasks={regularTasks} onToggle={toggleTask} onDelete={deleteTask} onMakeRecurring={makeRecurring} editMode={editMode} />
-      {recurringTasks.length > 0 && (
-        <TaskList title="Recurring" tasks={recurringTasks} onToggle={toggleTask} onDelete={deleteTask} onMakeRecurring={makeRecurring} editMode={editMode} />
+      <TaskList title="Tasks" tasks={regularTasks} onToggle={toggleTask} onDelete={deleteTask} onMakeRecurring={openRecurringPicker} editMode={editMode} />
+      {recurringTasksToday.length > 0 && (
+        <TaskList title="Recurring" tasks={recurringTasksToday} onToggle={toggleTask} onDelete={deleteTask} onMakeRecurring={openRecurringPicker} editMode={editMode} />
       )}
+
+      {/* Day picker for making a task recurring */}
+      <Modal open={!!pendingRecurTask} onClose={() => setPendingRecurTask(null)} title="Set recurring days">
+        <p style={{ fontSize: 14, color: 'var(--color-text-muted)', marginBottom: 16 }}>
+          "{pendingRecurTask?.text}"<br />
+          Select which days this repeats. Leave all unselected = every day.
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+          {DAY_LABELS.map((label, i) => (
+            <button key={i} onClick={() => toggleRecurDay(i)} style={{
+              padding: '10px 14px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 14,
+              fontWeight: recurDays.includes(i) ? 700 : 400,
+              background: recurDays.includes(i) ? 'var(--color-primary)' : 'var(--color-bg)',
+              color: recurDays.includes(i) ? 'white' : 'var(--color-text)',
+            }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 16 }}>
+          {recurDays.length === 0 ? 'Repeats every day' : `Repeats on: ${recurDays.sort().map(d => DAY_LABELS[d]).join(', ')}`}
+        </p>
+        <button className="btn-primary" onClick={saveRecurring} style={{ width: '100%' }}>
+          Save as recurring
+        </button>
+      </Modal>
+    </div>
+  );
+}
+
+function RecurChip({ rt, onAdd, onDelete, added }: { rt: RecurringTask; onAdd: () => void; onDelete: () => void; added: boolean }) {
+  const colorHex = COLORS.find(c => c.id === rt.color)?.hex || '#ccc';
+  const dayStr = rt.days.length === 0 ? 'every day' : rt.days.map(d => DAY_LABELS[d]).join(', ');
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 6, background: 'var(--color-bg)',
+      borderRadius: 20, padding: '6px 12px', border: '1.5px solid var(--color-border)',
+      opacity: added ? 0.6 : 1,
+    }}>
+      <div style={{ width: 8, height: 8, borderRadius: '50%', background: colorHex, flexShrink: 0 }} />
+      <div>
+        <button onClick={onAdd} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--color-text)', padding: 0, display: 'block', textAlign: 'left' }}>
+          {rt.text} <span style={{ color: 'var(--color-muted)', fontSize: 11 }}>·{rt.difficulty}</span>
+        </button>
+        <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>{dayStr}</span>
+      </div>
+      <button onClick={onDelete} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+        <Trash2 size={13} color="var(--color-text-muted)" />
+      </button>
     </div>
   );
 }
@@ -213,7 +291,6 @@ function TaskList({ title, tasks, onToggle, onDelete, onMakeRecurring, editMode 
 }) {
   const incomplete = tasks.filter(t => !t.completed);
   const complete = tasks.filter(t => t.completed);
-
   if (tasks.length === 0) return null;
 
   return (
@@ -221,18 +298,12 @@ function TaskList({ title, tasks, onToggle, onDelete, onMakeRecurring, editMode 
       <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: 8, paddingLeft: 4 }}>{title}</p>
       <AnimatePresence>
         {[...incomplete, ...complete].map(task => (
-          <motion.div
-            key={task.id}
-            layout
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
+          <motion.div key={task.id} layout initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
             style={{
               display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
               background: 'var(--color-surface)', borderRadius: 14, marginBottom: 8,
               opacity: task.completed ? 0.6 : 1, boxShadow: '0 1px 4px rgba(0,0,0,0.05)'
-            }}
-          >
+            }}>
             <button onClick={() => onToggle(task.id, !task.completed)} style={{
               width: 26, height: 26, borderRadius: '50%', border: '2px solid var(--color-primary)',
               background: task.completed ? 'var(--color-primary)' : 'transparent',
@@ -247,8 +318,7 @@ function TaskList({ title, tasks, onToggle, onDelete, onMakeRecurring, editMode 
                 {task.text}
               </p>
               <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%',
-                  background: COLORS.find(c => c.id === task.color)?.hex || '#ccc' }} />
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: COLORS.find(c => c.id === task.color)?.hex || '#ccc' }} />
                 <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
                   {DIFF_LABELS[task.difficulty]} · {task.difficulty}pt
                 </span>

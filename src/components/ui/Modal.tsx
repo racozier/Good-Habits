@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 interface Props {
   open: boolean;
@@ -10,7 +11,7 @@ interface Props {
 }
 
 export default function Modal({ open, onClose, title, children }: Props) {
-  return (
+  return createPortal(
     <AnimatePresence>
       {open && (
         <>
@@ -20,8 +21,8 @@ export default function Modal({ open, onClose, title, children }: Props) {
             exit={{ opacity: 0 }}
             onClick={onClose}
             style={{
-              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
-              zIndex: 100, backdropFilter: 'blur(2px)'
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+              zIndex: 1000, backdropFilter: 'blur(2px)'
             }}
           />
           <motion.div
@@ -30,10 +31,16 @@ export default function Modal({ open, onClose, title, children }: Props) {
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 280 }}
             style={{
-              position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-              width: '100%', maxWidth: 480, background: 'var(--color-surface)',
-              borderRadius: '20px 20px 0 0', padding: '20px 20px 40px',
-              zIndex: 101, maxHeight: '85dvh', overflowY: 'auto'
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              background: 'var(--color-surface)',
+              borderRadius: '20px 20px 0 0',
+              padding: '20px 20px 48px',
+              zIndex: 1001,
+              maxHeight: '90dvh',
+              overflowY: 'auto',
             }}
           >
             {title && (
@@ -48,6 +55,7 @@ export default function Modal({ open, onClose, title, children }: Props) {
           </motion.div>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }

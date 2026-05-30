@@ -19,6 +19,14 @@ export interface RecurringTask {
   text: string;
   difficulty: Difficulty;
   color: TaskColor;
+  days: number[]; // 0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat — empty = every day
+}
+
+export interface BookNote {
+  id: string;
+  bookId: string;
+  content: string;
+  createdAt: number;
 }
 
 export interface WaterEntry {
@@ -66,7 +74,7 @@ export interface Book {
   author: string;
   totalPages: number;
   currentPage: number;
-  coverEmoji: string;
+  coverColor: string;
   epubData?: string;
   completed: boolean;
   addedAt: number;

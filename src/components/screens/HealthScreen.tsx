@@ -51,7 +51,17 @@ export default function HealthScreen() {
   }
 
   async function addWater(ml: number) {
-    await db.waterEntries.add({ id: uid(), date, ml });
+    if (ml < 0 && waterMl <= 0) return;
+    if (ml < 0) {
+      const entries = await db.waterEntries.where('date').equals(date).toArray();
+      if (entries.length > 0) {
+        const last = entries[entries.length - 1];
+        if (last.ml + ml <= 0) await db.waterEntries.delete(last.id);
+        else await db.waterEntries.update(last.id, { ml: last.ml + ml });
+      }
+    } else {
+      await db.waterEntries.add({ id: uid(), date, ml });
+    }
     loadAll();
   }
 
@@ -140,10 +150,14 @@ export default function HealthScreen() {
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           {[150, 250, 330, 500].map(ml => (
             <button key={ml} onClick={() => addWater(ml)} className="btn-ghost" style={{ flex: 1, fontSize: 12, padding: '8px 0' }}>
-              +{ml}ml
+              +{ml}
             </button>
           ))}
         </div>
+        <button onClick={() => addWater(-250)} className="btn-ghost"
+          style={{ width: '100%', marginTop: 8, fontSize: 12, color: 'var(--color-text-muted)' }}>
+          − Remove one glass (250ml)
+        </button>
       </div>
 
       {/* Workout */}
