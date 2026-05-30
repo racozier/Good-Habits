@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { CheckSquare, Heart, Leaf, Sparkles, BookOpen, Gift, Calendar, BookMarked, Moon, Flame } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
@@ -31,7 +31,6 @@ export default function DashboardScreen() {
   const [streak, setStreak] = useState(0);
   const [showEnergySet, setShowEnergySet] = useState(false);
   const [rewardPopup, setRewardPopup] = useState<{ tier: 1|2|3|4 } | null>(null);
-  const prevMasterRef = useRef<number>(-1);
 
   useEffect(() => {
     loadProgress();
@@ -73,22 +72,18 @@ export default function DashboardScreen() {
     const newProgress = { tasks: taskProg, health: healthProg, env: envProg, life: 0 };
     setProgress(newProgress);
 
-    // Check reward tier crossings
+    // Trigger reward popup for any unclaimed tier that's been reached
     const newMaster = calcMasterProgress(taskProg, healthProg, envProg, 0);
-    const prevMaster = prevMasterRef.current;
-    if (prevMaster >= 0) {
-      const claimedKey = `reward-claimed-${date}`;
-      const claimed: number[] = JSON.parse(localStorage.getItem(claimedKey) || '[]');
-      const thresholds: [number, 1|2|3|4][] = [[25,1],[50,2],[75,3],[100,4]];
-      for (const [threshold, tier] of thresholds) {
-        if (prevMaster < threshold && newMaster >= threshold && !claimed.includes(tier)) {
-          localStorage.setItem(claimedKey, JSON.stringify([...claimed, tier]));
-          setRewardPopup({ tier });
-          break;
-        }
+    const claimedKey = `reward-claimed-${date}`;
+    const claimed: number[] = JSON.parse(localStorage.getItem(claimedKey) || '[]');
+    const thresholds: [number, 1|2|3|4][] = [[25,1],[50,2],[75,3],[100,4]];
+    for (const [threshold, tier] of thresholds) {
+      if (newMaster >= threshold && !claimed.includes(tier)) {
+        localStorage.setItem(claimedKey, JSON.stringify([...claimed, tier]));
+        setRewardPopup({ tier });
+        break;
       }
     }
-    prevMasterRef.current = newMaster;
   }
 
   const master = calcMasterProgress(progress.tasks, progress.health, progress.env, progress.life);

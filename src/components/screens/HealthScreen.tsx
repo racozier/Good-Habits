@@ -51,16 +51,23 @@ export default function HealthScreen() {
   }
 
   async function addWater(ml: number) {
-    if (ml < 0 && waterMl <= 0) return;
-    if (ml < 0) {
-      const entries = await db.waterEntries.where('date').equals(date).toArray();
-      if (entries.length > 0) {
-        const last = entries[entries.length - 1];
-        if (last.ml + ml <= 0) await db.waterEntries.delete(last.id);
-        else await db.waterEntries.update(last.id, { ml: last.ml + ml });
-      }
-    } else {
+    if (ml > 0) {
       await db.waterEntries.add({ id: uid(), date, ml });
+    } else {
+      // Subtract: reduce from most-recent entries until amount covered
+      const entries = await db.waterEntries.where('date').equals(date).toArray();
+      entries.sort((a, b) => a.id.localeCompare(b.id));
+      let toRemove = Math.abs(ml);
+      for (let i = entries.length - 1; i >= 0 && toRemove > 0; i--) {
+        const e = entries[i];
+        if (e.ml <= toRemove) {
+          await db.waterEntries.delete(e.id);
+          toRemove -= e.ml;
+        } else {
+          await db.waterEntries.update(e.id, { ml: e.ml - toRemove });
+          toRemove = 0;
+        }
+      }
     }
     loadAll();
   }
@@ -135,29 +142,46 @@ export default function HealthScreen() {
 
       {/* Water */}
       <div className="card" style={{ marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <Droplets size={18} color="#5B9EA0" />
           <span style={{ fontWeight: 600, fontSize: 15 }}>Water Intake</span>
           <span style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--color-text-muted)' }}>{waterMl} / 2000 ml</span>
         </div>
-        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} style={{ fontSize: 22, opacity: i < glasses ? 1 : 0.25, cursor: 'pointer' }}
-              onClick={() => addWater(250)}>💧</div>
+
+        {/* Glass counter row */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, marginBottom: 14 }}>
+          <button onClick={() => addWater(-250)} disabled={waterMl <= 0} style={{
+            width: 44, height: 44, borderRadius: '50%', border: '2px solid var(--color-border)',
+            background: 'var(--color-bg)', fontSize: 22, cursor: waterMl > 0 ? 'pointer' : 'default',
+            opacity: waterMl > 0 ? 1 : 0.3, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>−</button>
+          <div style={{ textAlign: 'center' }}>
+            <p style={{ margin: 0, fontSize: 40, fontWeight: 800, color: '#5B9EA0', lineHeight: 1 }}>{glasses}</p>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--color-text-muted)' }}>glasses · {waterMl}ml</p>
+          </div>
+          <button onClick={() => addWater(250)} style={{
+            width: 44, height: 44, borderRadius: '50%', border: 'none',
+            background: '#5B9EA0', fontSize: 22, cursor: 'pointer', color: 'white',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>+</button>
+        </div>
+
+        <ProgressBar value={Math.min((waterMl / 2000) * 100, 100)} height={8} showPercent={false} color="#5B9EA0" />
+
+        {/* Quick-add other amounts */}
+        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+          {[{ ml: 150, label: 'small\n150ml' }, { ml: 330, label: 'can\n330ml' }, { ml: 500, label: 'bottle\n500ml' }].map(({ ml, label }) => (
+            <div key={ml} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <button onClick={() => addWater(ml)} className="btn-ghost" style={{ fontSize: 12, padding: '7px 0', width: '100%' }}>
+                +{ml}ml
+              </button>
+              <button onClick={() => addWater(-ml)} disabled={waterMl < ml} className="btn-ghost"
+                style={{ fontSize: 12, padding: '7px 0', width: '100%', opacity: waterMl >= ml ? 1 : 0.35, color: 'var(--color-text-muted)' }}>
+                −{ml}ml
+              </button>
+            </div>
           ))}
         </div>
-        <ProgressBar value={Math.min((waterMl / 2000) * 100, 100)} height={6} showPercent={false} color="#5B9EA0" />
-        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-          {[150, 250, 330, 500].map(ml => (
-            <button key={ml} onClick={() => addWater(ml)} className="btn-ghost" style={{ flex: 1, fontSize: 12, padding: '8px 0' }}>
-              +{ml}
-            </button>
-          ))}
-        </div>
-        <button onClick={() => addWater(-250)} className="btn-ghost"
-          style={{ width: '100%', marginTop: 8, fontSize: 12, color: 'var(--color-text-muted)' }}>
-          − Remove one glass (250ml)
-        </button>
       </div>
 
       {/* Workout */}

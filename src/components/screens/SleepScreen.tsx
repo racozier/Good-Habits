@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Moon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { db } from '../../db';
-import { today, uid, calcSleepDuration, formatShortDate } from '../../utils/dateUtils';
+import { today, uid, calcSleepDuration, formatShortDate, addDays } from '../../utils/dateUtils';
 import type { SleepEntry, Mood } from '../../types';
 
 const MOODS: { id: Mood; emoji: string; label: string }[] = [
@@ -49,16 +49,9 @@ export default function SleepScreen() {
     loadHistory();
   }
 
-  function prevDay() {
-    const d = new Date(currentDate + 'T00:00:00');
-    d.setDate(d.getDate() - 1);
-    setCurrentDate(d.toISOString().split('T')[0]);
-  }
-
+  function prevDay() { setCurrentDate(addDays(currentDate, -1)); }
   function nextDay() {
-    const d = new Date(currentDate + 'T00:00:00');
-    d.setDate(d.getDate() + 1);
-    const next = d.toISOString().split('T')[0];
+    const next = addDays(currentDate, 1);
     if (next <= today()) setCurrentDate(next);
   }
 
