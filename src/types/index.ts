@@ -1,4 +1,4 @@
-export type Theme = 'warm' | 'cool';
+export type Theme = 'warm' | 'cool' | 'terracotta' | 'forest' | 'navycoral' | 'darkmoss' | 'winegold' | 'linensteel' | 'teal' | 'oceanfire' | 'amber' | 'seafoam';
 export type Difficulty = 1 | 2 | 3;
 export type TaskColor = 'physical' | 'stress' | 'growth' | 'environment' | 'general';
 export type Mood = 'great' | 'okay' | 'bad';
@@ -12,6 +12,10 @@ export interface Task {
   isRecurring: boolean;
   date: string;
   createdAt: number;
+  scary?: boolean;
+  scaryAddedDate?: string;
+  missed?: boolean;
+  missedFromDate?: string;
 }
 
 export interface RecurringTask {
@@ -19,7 +23,7 @@ export interface RecurringTask {
   text: string;
   difficulty: Difficulty;
   color: TaskColor;
-  days: number[]; // 0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat — empty = every day
+  days: number[];
 }
 
 export interface BookNote {
@@ -75,6 +79,18 @@ export interface IncomeEntry {
   note?: string;
 }
 
+export interface WalkEntry {
+  id: string;
+  date: string;
+  minutes: number;
+}
+
+export interface WeightEntry {
+  id: string;
+  date: string;
+  kg: number;
+}
+
 export interface Book {
   id: string;
   title: string;
@@ -82,6 +98,7 @@ export interface Book {
   totalPages: number;
   currentPage: number;
   coverColor: string;
+  coverImage?: string;
   epubData?: string;
   completed: boolean;
   addedAt: number;
@@ -107,12 +124,18 @@ export interface LifeGoal {
   text: string;
   category: TaskColor;
   difficulty: Difficulty;
+  isCustom?: boolean;
 }
 
 export interface DiaryEntry {
   id: string;
   date: string;
   content: string;
+  s1?: string;
+  s2?: string;
+  s3?: string;
+  s4?: string;
+  s5?: string;
   mood?: Mood;
 }
 
@@ -129,6 +152,7 @@ export interface DaySettings {
   date: string;
   energyLevel: number;
   greetShown: boolean;
+  bedtime?: string;
 }
 
 export interface Streak {

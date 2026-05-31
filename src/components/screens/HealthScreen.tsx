@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
-import { Droplets, Dumbbell, BookOpen, Sparkles, Trash2 } from 'lucide-react';
+import { Droplets, Dumbbell, Trash2, Scale, Footprints, Moon } from 'lucide-react';
 import { db } from '../../db';
 import { today, uid, getWeekStart } from '../../utils/dateUtils';
-import { calcHealthProgress, calcEnvironmentProgress } from '../../utils/progress';
+import { calcHealthProgress, calcWorkoutProgress } from '../../utils/progress';
+import { useAppStore } from '../../store/appStore';
 import ProgressBar from '../ui/ProgressBar';
-import CountdownTimer from '../ui/CountdownTimer';
 import Modal from '../ui/Modal';
-import type { WorkoutEntry, ReadingEntry, CleaningEntry, IncomeEntry } from '../../types';
+import CountdownTimer from '../ui/CountdownTimer';
+import type { WorkoutEntry, WeightEntry, WalkEntry, IncomeEntry } from '../../types';
 
 export default function HealthScreen() {
-  const date = today();
+  const { viewingDate } = useAppStore();
+  const date = viewingDate;
   const weekStart = getWeekStart(date);
 
   const [waterMl, setWaterMl] = useState(0);
@@ -17,17 +19,26 @@ export default function HealthScreen() {
   const [weeklyWorkout, setWeeklyWorkout] = useState(0);
   const [workoutGoal, setWorkoutGoal] = useState(60);
   const [timesReached, setTimesReached] = useState(0);
-  const [todayReadingMins, setTodayReadingMins] = useState(0);
   const [cleaningMins, setCleaningMins] = useState(0);
+  const [weightEntries, setWeightEntries] = useState<WeightEntry[]>([]);
+  const [walkEntries, setWalkEntries] = useState<WalkEntry[]>([]);
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([]);
+  const [bedtime, setBedtime] = useState('');
+  const [savedBedtime, setSavedBedtime] = useState('');
+
   const [showWorkoutInput, setShowWorkoutInput] = useState(false);
   const [workoutMins, setWorkoutMins] = useState('');
+  const [showWeightInput, setShowWeightInput] = useState(false);
+  const [weightKg, setWeightKg] = useState('');
+  const [showWalkInput, setShowWalkInput] = useState(false);
+  const [walkMins, setWalkMins] = useState('');
+  const [walkDone, setWalkDone] = useState(false);
   const [showReadingTimer, setShowReadingTimer] = useState(false);
   const [incomeAmount, setIncomeAmount] = useState('');
   const [incomeNote, setIncomeNote] = useState('');
   const [showIncomeAdd, setShowIncomeAdd] = useState(false);
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); }, [date]);
 
   async function loadAll() {
     const water = await db.waterEntries.where('date').equals(date).toArray();
@@ -40,14 +51,21 @@ export default function HealthScreen() {
     const goal = await db.workoutGoal.get('goal');
     if (goal) { setWorkoutGoal(goal.weeklyMinutes); setTimesReached(goal.timesReached); }
 
-    const readings = await db.readingEntries.where('date').equals(date).toArray();
-    setTodayReadingMins(readings.reduce((s, r) => s + r.minutes, 0));
-
     const cleaning = await db.cleaningEntries.where('date').equals(date).toArray();
     setCleaningMins(cleaning.reduce((s, c) => s + c.minutes, 0));
 
+    const weights = await db.weightEntries.where('date').equals(date).toArray();
+    setWeightEntries(weights);
+
+    const walks = await db.walkEntries.where('date').equals(date).toArray();
+    setWalkEntries(walks);
+    setWalkDone(walks.length > 0);
+
     const income = await db.incomeEntries.where('date').equals(date).toArray();
     setIncomeEntries(income);
+
+    const ds = await db.daySettings.get(date);
+    if (ds?.bedtime) setSavedBedtime(ds.bedtime);
   }
 
   async function addWater(ml: number) {
@@ -59,13 +77,8 @@ export default function HealthScreen() {
       let toRemove = Math.abs(ml);
       for (let i = entries.length - 1; i >= 0 && toRemove > 0; i--) {
         const e = entries[i];
-        if (e.ml <= toRemove) {
-          await db.waterEntries.delete(e.id);
-          toRemove -= e.ml;
-        } else {
-          await db.waterEntries.update(e.id, { ml: e.ml - toRemove });
-          toRemove = 0;
-        }
+        if (e.ml <= toRemove) { await db.waterEntries.delete(e.id); toRemove -= e.ml; }
+        else { await db.waterEntries.update(e.id, { ml: e.ml - toRemove }); toRemove = 0; }
       }
     }
     loadAll();
@@ -79,68 +92,92 @@ export default function HealthScreen() {
     if (newWeekly >= workoutGoal && weeklyWorkout < workoutGoal) {
       await db.workoutGoal.update('goal', { timesReached: timesReached + 1 });
     }
-    setWorkoutMins('');
-    setShowWorkoutInput(false);
-    loadAll();
+    setWorkoutMins(''); setShowWorkoutInput(false); loadAll();
+  }
+
+  async function deleteWorkout(id: string) {
+    await db.workoutEntries.delete(id); loadAll();
   }
 
   async function increaseGoal() {
-    await db.workoutGoal.update('goal', { weeklyMinutes: workoutGoal + 10 });
-    loadAll();
+    await db.workoutGoal.update('goal', { weeklyMinutes: workoutGoal + 10 }); loadAll();
   }
 
   async function logCleaning() {
-    await db.cleaningEntries.add({ id: uid(), date, minutes: 20 });
-    loadAll();
+    await db.cleaningEntries.add({ id: uid(), date, minutes: 20 }); loadAll();
+  }
+
+  async function addWeight() {
+    const kg = parseFloat(weightKg);
+    if (isNaN(kg) || kg <= 0) return;
+    await db.weightEntries.add({ id: uid(), date, kg });
+    setWeightKg(''); setShowWeightInput(false); loadAll();
+  }
+
+  async function deleteWeight(id: string) {
+    await db.weightEntries.delete(id); loadAll();
+  }
+
+  async function logWalk() {
+    const mins = parseInt(walkMins) || 30;
+    await db.walkEntries.add({ id: uid(), date, minutes: mins });
+    setWalkMins(''); setShowWalkInput(false); loadAll();
+  }
+
+  async function deleteWalk(id: string) {
+    await db.walkEntries.delete(id); loadAll();
+  }
+
+  async function saveBedtime() {
+    const existing = await db.daySettings.get(date);
+    if (existing) await db.daySettings.update(date, { bedtime });
+    else await db.daySettings.put({ date, energyLevel: 5, greetShown: false, bedtime });
+    setSavedBedtime(bedtime); setBedtime('');
   }
 
   async function addIncome() {
     const amount = parseFloat(incomeAmount);
     if (isNaN(amount) || amount <= 0) return;
     await db.incomeEntries.add({ id: uid(), date, amount, note: incomeNote.trim() || undefined });
-    setIncomeAmount('');
-    setIncomeNote('');
-    setShowIncomeAdd(false);
-    loadAll();
+    setIncomeAmount(''); setIncomeNote(''); setShowIncomeAdd(false); loadAll();
   }
 
   async function deleteIncome(id: string) {
-    await db.incomeEntries.delete(id);
-    loadAll();
+    await db.incomeEntries.delete(id); loadAll();
   }
 
   async function onReadingComplete() {
     await db.readingEntries.add({ id: uid(), date, minutes: 15 });
-    setShowReadingTimer(false);
-    loadAll();
+    setShowReadingTimer(false); loadAll();
   }
 
-  const glasses = Math.floor(waterMl / 250);
   const cleaningDone = cleaningMins >= 20;
+  const weightLogged = weightEntries.length > 0;
+  const latestWeight = weightEntries.length > 0 ? weightEntries[weightEntries.length - 1].kg : null;
   const totalIncome = incomeEntries.reduce((s, e) => s + e.amount, 0);
-  const healthProg = calcHealthProgress(waterMl, weeklyWorkout, workoutGoal, todayReadingMins);
-  const envProg = calcEnvironmentProgress(cleaningDone);
+  const healthProg = calcHealthProgress(waterMl, weightLogged, cleaningDone);
+  const workoutProg = calcWorkoutProgress(weeklyWorkout, workoutGoal);
 
   return (
     <div className="screen" style={{ padding: '0 16px 80px' }}>
 
-      {/* Inner Environment */}
+      {/* Health progress */}
       <div className="card" style={{ marginTop: 16, marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <Sparkles size={18} color="var(--color-primary)" />
-          <span style={{ fontWeight: 700, fontSize: 16, color: 'var(--color-text)' }}>Inner Environment</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <span style={{ fontWeight: 700, fontSize: 15 }}>Daily Health</span>
+          <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--color-primary)' }}>{healthProg}%</span>
         </div>
-        <ProgressBar value={healthProg} label="Health Progress" height={8} />
+        <ProgressBar value={healthProg} height={10} showPercent={false} />
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: '8px 0 0' }}>Water · Weight logged · Cleaning</p>
       </div>
 
       {/* Water */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <Droplets size={18} color="#5B9EA0" />
-          <span style={{ fontWeight: 600, fontSize: 15 }}>Water Intake</span>
+          <span style={{ fontWeight: 600, fontSize: 15 }}>Water</span>
           <span style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--color-text-muted)' }}>{waterMl} / 2000 ml</span>
         </div>
-
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, marginBottom: 14 }}>
           <button onClick={() => addWater(-250)} disabled={waterMl <= 0} style={{
             width: 44, height: 44, borderRadius: '50%', border: '2px solid var(--color-border)',
@@ -148,7 +185,7 @@ export default function HealthScreen() {
             opacity: waterMl > 0 ? 1 : 0.3, display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>−</button>
           <div style={{ textAlign: 'center' }}>
-            <p style={{ margin: 0, fontSize: 40, fontWeight: 800, color: '#5B9EA0', lineHeight: 1 }}>{glasses}</p>
+            <p style={{ margin: 0, fontSize: 40, fontWeight: 800, color: '#5B9EA0', lineHeight: 1 }}>{Math.floor(waterMl / 250)}</p>
             <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--color-text-muted)' }}>glasses · {waterMl}ml</p>
           </div>
           <button onClick={() => addWater(250)} style={{
@@ -157,59 +194,42 @@ export default function HealthScreen() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>+</button>
         </div>
-
         <ProgressBar value={Math.min((waterMl / 2000) * 100, 100)} height={8} showPercent={false} color="#5B9EA0" />
       </div>
 
-      {/* Workout */}
+      {/* Weight */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <Dumbbell size={18} color="var(--color-primary)" />
-          <span style={{ fontWeight: 600, fontSize: 15 }}>Workout</span>
+          <Scale size={18} color="var(--color-primary)" />
+          <span style={{ fontWeight: 600, fontSize: 15 }}>Weight</span>
+          {latestWeight && (
+            <span style={{ marginLeft: 'auto', fontWeight: 700, fontSize: 15, color: 'var(--color-primary)' }}>
+              {latestWeight} kg
+            </span>
+          )}
+          {weightLogged && <span style={{ fontSize: 13, color: 'green' }}>✓</span>}
         </div>
-        <ProgressBar value={Math.min((weeklyWorkout / workoutGoal) * 100, 100)}
-          label={`This week: ${weeklyWorkout} / ${workoutGoal} min`} height={8} />
-        {timesReached >= 2 && (
-          <button onClick={increaseGoal} className="btn-ghost" style={{ marginTop: 8, fontSize: 12, width: '100%' }}>
-            🏆 Increase goal to {workoutGoal + 10} min
-          </button>
-        )}
-        {showWorkoutInput ? (
-          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <input className="input" type="number" placeholder="Minutes" value={workoutMins}
-              onChange={e => setWorkoutMins(e.target.value)} style={{ flex: 1 }} />
-            <button className="btn-primary" onClick={addWorkout}>Log</button>
-            <button className="btn-ghost" onClick={() => setShowWorkoutInput(false)}>✕</button>
+        {weightEntries.map(e => (
+          <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <span style={{ flex: 1, fontSize: 14 }}>{e.kg} kg</span>
+            <button onClick={() => deleteWeight(e.id)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+              <Trash2 size={14} color="var(--color-text-muted)" />
+            </button>
+          </div>
+        ))}
+        {showWeightInput ? (
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <input className="input" type="number" placeholder="kg (e.g. 65.5)" value={weightKg}
+              onChange={e => setWeightKg(e.target.value)} style={{ flex: 1 }}
+              onKeyDown={e => e.key === 'Enter' && addWeight()} />
+            <button className="btn-primary" onClick={addWeight}>Log</button>
+            <button className="btn-ghost" onClick={() => setShowWeightInput(false)}>✕</button>
           </div>
         ) : (
-          <button onClick={() => setShowWorkoutInput(true)} className="btn-primary" style={{ width: '100%', marginTop: 10 }}>
-            + Log workout
+          <button onClick={() => setShowWeightInput(true)} className="btn-primary" style={{ width: '100%', marginTop: weightEntries.length > 0 ? 8 : 0 }}>
+            + Log weight
           </button>
         )}
-      </div>
-
-      {/* Reading */}
-      <div className="card" style={{ marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <BookOpen size={18} color="#C8D5A0" />
-          <span style={{ fontWeight: 600, fontSize: 15 }}>Reading</span>
-          <span style={{ marginLeft: 'auto', fontSize: 13, color: todayReadingMins >= 15 ? 'green' : 'var(--color-text-muted)' }}>
-            {todayReadingMins} / 15 min {todayReadingMins >= 15 ? '✓' : ''}
-          </span>
-        </div>
-        <ProgressBar value={Math.min((todayReadingMins / 15) * 100, 100)} height={6} showPercent={false} color="#C8D5A0" />
-        <button onClick={() => setShowReadingTimer(true)} className="btn-primary" style={{ width: '100%', marginTop: 10 }}>
-          ⏱ Start 15-min timer
-        </button>
-      </div>
-
-      {/* Outer Environment */}
-      <div className="card" style={{ marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <Sparkles size={18} color="#C8D5A0" />
-          <span style={{ fontWeight: 700, fontSize: 16, color: 'var(--color-text)' }}>Outer Environment</span>
-        </div>
-        <ProgressBar value={envProg} label="Environment Progress" height={8} />
       </div>
 
       {/* Cleaning */}
@@ -229,6 +249,105 @@ export default function HealthScreen() {
         </button>
       </div>
 
+      {/* Walk */}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <Footprints size={18} color="#C8D5A0" />
+          <span style={{ fontWeight: 600, fontSize: 15 }}>Walk</span>
+          {walkDone && <span style={{ marginLeft: 'auto', color: 'green', fontSize: 13 }}>✓ Done!</span>}
+        </div>
+        {walkEntries.map(e => (
+          <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <span style={{ flex: 1, fontSize: 14 }}>🚶 {e.minutes} min</span>
+            <button onClick={() => deleteWalk(e.id)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+              <Trash2 size={14} color="var(--color-text-muted)" />
+            </button>
+          </div>
+        ))}
+        {showWalkInput ? (
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <input className="input" type="number" placeholder="Minutes (e.g. 30)" value={walkMins}
+              onChange={e => setWalkMins(e.target.value)} style={{ flex: 1 }}
+              onKeyDown={e => e.key === 'Enter' && logWalk()} />
+            <button className="btn-primary" onClick={logWalk}>Log</button>
+            <button className="btn-ghost" onClick={() => setShowWalkInput(false)}>✕</button>
+          </div>
+        ) : (
+          <button onClick={() => setShowWalkInput(true)} className={walkDone ? 'btn-ghost' : 'btn-primary'}
+            style={{ width: '100%', marginTop: walkEntries.length > 0 ? 8 : 0 }}>
+            + Log walk
+          </button>
+        )}
+      </div>
+
+      {/* Weekly workout */}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <Dumbbell size={18} color="var(--color-primary)" />
+          <span style={{ fontWeight: 600, fontSize: 15 }}>Workout</span>
+          <span style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--color-text-muted)' }}>
+            {weeklyWorkout}/{workoutGoal} min this week
+          </span>
+        </div>
+        <ProgressBar value={workoutProg} height={8} showPercent={false} />
+        {workoutEntries.filter(w => w.date === date).map(e => (
+          <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+            <span style={{ flex: 1, fontSize: 14 }}>💪 {e.minutes} min</span>
+            <button onClick={() => deleteWorkout(e.id)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+              <Trash2 size={14} color="var(--color-text-muted)" />
+            </button>
+          </div>
+        ))}
+        {timesReached >= 2 && (
+          <button onClick={increaseGoal} className="btn-ghost" style={{ marginTop: 8, fontSize: 12, width: '100%' }}>
+            🏆 Increase goal to {workoutGoal + 10} min
+          </button>
+        )}
+        {showWorkoutInput ? (
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <input className="input" type="number" placeholder="Minutes" value={workoutMins}
+              onChange={e => setWorkoutMins(e.target.value)} style={{ flex: 1 }} />
+            <button className="btn-primary" onClick={addWorkout}>Log</button>
+            <button className="btn-ghost" onClick={() => setShowWorkoutInput(false)}>✕</button>
+          </div>
+        ) : (
+          <button onClick={() => setShowWorkoutInput(true)} className="btn-primary" style={{ width: '100%', marginTop: 10 }}>
+            + Log workout
+          </button>
+        )}
+      </div>
+
+      {/* Goodnight / Bedtime */}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <Moon size={18} color="#5B9EA0" />
+          <span style={{ fontWeight: 600, fontSize: 15 }}>Goodnight</span>
+          {savedBedtime && (
+            <span style={{ marginLeft: 'auto', fontWeight: 700, fontSize: 14, color: '#5B9EA0' }}>
+              🌙 {savedBedtime}
+            </span>
+          )}
+        </div>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '0 0 10px' }}>
+          What time did you go to bed?
+        </p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            className="input"
+            type="time"
+            value={bedtime}
+            onChange={e => setBedtime(e.target.value)}
+            style={{ flex: 1 }}
+          />
+          <button className="btn-primary" onClick={saveBedtime} disabled={!bedtime}>
+            Save
+          </button>
+        </div>
+        {savedBedtime && (
+          <p style={{ fontSize: 12, color: 'green', margin: '8px 0 0' }}>✓ Logged: {savedBedtime}</p>
+        )}
+      </div>
+
       {/* Income */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -242,9 +361,7 @@ export default function HealthScreen() {
         </div>
         {incomeEntries.map(e => (
           <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-            <span style={{ flex: 1, fontSize: 14, color: 'var(--color-text)' }}>
-              ${e.amount.toFixed(2)}{e.note ? ` · ${e.note}` : ''}
-            </span>
+            <span style={{ flex: 1, fontSize: 14 }}>${e.amount.toFixed(2)}{e.note ? ` · ${e.note}` : ''}</span>
             <button onClick={() => deleteIncome(e.id)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
               <Trash2 size={14} color="var(--color-text-muted)" />
             </button>

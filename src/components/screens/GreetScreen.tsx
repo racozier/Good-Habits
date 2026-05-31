@@ -16,7 +16,27 @@ const QUOTES = [
   "Today is full of possibility.",
   "Your effort today is building your future.",
   "Be proud of how far you've come.",
+  "The best time to start is now.",
+  "Small consistent actions create massive results.",
+  "You have everything you need within you.",
+  "Make today count.",
+  "Growth is uncomfortable — and worth it.",
 ];
+
+const PHOTOS = [
+  'pic1.jpg','pic2.avif','pic3.avif','pic4.jpg','pic5.jpg',
+  'pic6.jpeg','pic7.avif','pic8.jpg','pic9.jpg','pic10.webp',
+  'pic11.jpg','pic12.avif','pic13.jpg','pic14.jpg','pic15.jpg',
+  'pic16.webp','pic17.avif','pic18.jpg','pic19.avif','pic20.webp',
+  'pic21.webp',
+];
+
+function getDailyPhoto(): string {
+  const d = new Date();
+  const dayOfYear = Math.floor((d.getTime() - new Date(d.getFullYear(), 0, 0).getTime()) / 86400000);
+  const idx = dayOfYear % PHOTOS.length;
+  return `${import.meta.env.BASE_URL}assets/${PHOTOS[idx]}`;
+}
 
 function getDailyQuote(): string {
   const dayIndex = new Date().getDate() % QUOTES.length;
@@ -26,10 +46,10 @@ function getDailyQuote(): string {
 interface Weather { temp: number; code: number; description: string; }
 
 function weatherIcon(code: number) {
-  if (code === 0) return <Sun size={28} color="#F7DC8A" />;
-  if (code <= 3) return <Cloud size={28} color="#aaa" />;
-  if (code <= 67) return <CloudRain size={28} color="#5B9EA0" />;
-  return <Wind size={28} color="#aaa" />;
+  if (code === 0) return <Sun size={22} color="#F7DC8A" />;
+  if (code <= 3) return <Cloud size={22} color="rgba(255,255,255,0.8)" />;
+  if (code <= 67) return <CloudRain size={22} color="rgba(255,255,255,0.8)" />;
+  return <Wind size={22} color="rgba(255,255,255,0.8)" />;
 }
 
 function weatherDesc(code: number): string {
@@ -45,12 +65,12 @@ function weatherDesc(code: number): string {
 }
 
 export default function GreetScreen() {
-  const { navigate } = useAppStore();
+  const { navigate, energyLevel, setEnergyLevel } = useAppStore();
   const [weather, setWeather] = useState<Weather | null>(null);
-  const [weatherError, setWeatherError] = useState(false);
+  const [photoUrl] = useState(getDailyPhoto());
 
   useEffect(() => {
-    if (!navigator.geolocation) { setWeatherError(true); return; }
+    if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(async (pos) => {
       try {
         const { latitude, longitude } = pos.coords;
@@ -60,95 +80,134 @@ export default function GreetScreen() {
         const data = await res.json();
         const cw = data.current_weather;
         setWeather({ temp: Math.round(cw.temperature), code: cw.weathercode, description: weatherDesc(cw.weathercode) });
-      } catch { setWeatherError(true); }
-    }, () => setWeatherError(true));
+      } catch { /* weather unavailable */ }
+    }, () => { /* location denied */ });
   }, []);
 
-  const gradients = [
-    'linear-gradient(135deg, #E8916A 0%, #F7DC8A 50%, #C8D5A0 100%)',
-    'linear-gradient(135deg, #5B9EA0 0%, #C8D5A0 50%, #F7DC8A 100%)',
-    'linear-gradient(135deg, #F7DC8A 0%, #E8916A 100%)',
-    'linear-gradient(135deg, #C8D5A0 0%, #5B9EA0 100%)',
-  ];
-  const gradient = gradients[new Date().getDay() % gradients.length];
+  async function startDay() {
+    await db.daySettings.put({ date: today(), energyLevel, greetShown: true });
+    navigate('dashboard');
+  }
 
   return (
-    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--color-bg)' }}>
-      <motion.div
-        initial={{ opacity: 0, scale: 1.05 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.8 }}
-        style={{ height: '45dvh', background: gradient, position: 'relative', overflow: 'hidden' }}
-      >
-        <div style={{
-          position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: 8,
-          background: 'rgba(0,0,0,0.08)'
-        }}>
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            style={{ fontSize: 48 }}
-          >🌸</motion.div>
+    <div style={{ position: 'relative', minHeight: '100dvh', overflow: 'hidden' }}>
+      {/* Full-screen background photo */}
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 0,
+        backgroundImage: `url(${photoUrl})`,
+        backgroundSize: 'cover', backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+      }} />
+
+      {/* Dark gradient overlay for readability */}
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 1,
+        background: 'linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.20) 40%, rgba(0,0,0,0.60) 100%)',
+      }} />
+
+      {/* Content overlay */}
+      <div style={{
+        position: 'relative', zIndex: 2,
+        minHeight: '100dvh', display: 'flex', flexDirection: 'column',
+        padding: '0 24px',
+      }}>
+        {/* Top: Bloomia + weather */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          style={{ paddingTop: 'max(env(safe-area-inset-top), 48px)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}
+        >
+          <div>
+            <p style={{ margin: 0, fontSize: 30, fontWeight: 800, color: '#fff', letterSpacing: -0.5, textShadow: '0 2px 8px rgba(0,0,0,0.4)' }}>
+              Bloomia
+            </p>
+            <p style={{ margin: '2px 0 0', fontSize: 13, color: 'rgba(255,255,255,0.75)', fontStyle: 'italic', textShadow: '0 1px 4px rgba(0,0,0,0.4)' }}>
+              Grow every day
+            </p>
+          </div>
           {weather && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5 }}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.3)',
-                borderRadius: 20, padding: '6px 16px', backdropFilter: 'blur(8px)' }}
-            >
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: 'rgba(0,0,0,0.35)', borderRadius: 20, padding: '6px 14px',
+              backdropFilter: 'blur(8px)',
+            }}>
               {weatherIcon(weather.code)}
-              <span style={{ color: '#fff', fontWeight: 600, fontSize: 16, textShadow: '0 1px 3px rgba(0,0,0,0.3)' }}>
+              <span style={{ color: '#fff', fontWeight: 600, fontSize: 14, textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
                 {weather.temp}° · {weather.description}
               </span>
-            </motion.div>
+            </div>
           )}
-          {weatherError && (
-            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13 }}>Weather unavailable</div>
-          )}
-        </div>
-      </motion.div>
+        </motion.div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4, duration: 0.6 }}
-        style={{ flex: 1, padding: '32px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}
-      >
-        <div>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: 14, marginBottom: 4 }}>
-            {formatDate(today())}
-          </p>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--color-text)', margin: 0 }}>
-            Hello, Ada! 👋
-          </h1>
-        </div>
-
-        <div style={{
-          background: 'var(--color-surface)', borderRadius: 16, padding: '20px',
-          borderLeft: '4px solid var(--color-primary)'
-        }}>
-          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 6, fontStyle: 'italic' }}>
-            Today's inspiration
-          </p>
-          <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--color-text)', lineHeight: 1.5, margin: 0 }}>
-            "{getDailyQuote()}"
-          </p>
-        </div>
-
-        <button
-          className="btn-primary"
-          onClick={async () => {
-            await db.daySettings.put({ date: today(), energyLevel: 5, greetShown: true });
-            navigate('dashboard');
-          }}
-          style={{ fontSize: 17, padding: '16px', marginTop: 'auto', borderRadius: 16 }}
+        {/* Middle: greeting + quote */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 20 }}
         >
-          Start your day ✨
-        </button>
-      </motion.div>
+          <div>
+            <p style={{ margin: '0 0 4px', fontSize: 15, color: 'rgba(255,255,255,0.75)', textShadow: '0 1px 4px rgba(0,0,0,0.5)' }}>
+              {formatDate(today())}
+            </p>
+            <h1 style={{ margin: 0, fontSize: 34, fontWeight: 800, color: '#fff', textShadow: '0 2px 12px rgba(0,0,0,0.5)', lineHeight: 1.15 }}>
+              Hello, Ada! 👋
+            </h1>
+          </div>
+
+          <div style={{
+            background: 'rgba(0,0,0,0.35)', borderRadius: 16, padding: '18px 20px',
+            backdropFilter: 'blur(12px)', borderLeft: '3px solid rgba(255,255,255,0.5)',
+          }}>
+            <p style={{ margin: '0 0 6px', fontSize: 11, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 1 }}>
+              Today's inspiration
+            </p>
+            <p style={{ margin: 0, fontSize: 16, fontWeight: 500, color: '#fff', lineHeight: 1.55, textShadow: '0 1px 4px rgba(0,0,0,0.4)' }}>
+              "{getDailyQuote()}"
+            </p>
+          </div>
+        </motion.div>
+
+        {/* Bottom: energy + start button */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6 }}
+          style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 40px)', display: 'flex', flexDirection: 'column', gap: 16 }}
+        >
+          <div style={{
+            background: 'rgba(0,0,0,0.40)', borderRadius: 16, padding: '16px 18px',
+            backdropFilter: 'blur(12px)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>⚡ Energy level</span>
+              <span style={{ fontSize: 20, fontWeight: 800, color: '#F7DC8A' }}>{energyLevel}/10</span>
+            </div>
+            <input
+              type="range" min={1} max={10} value={energyLevel}
+              onChange={e => setEnergyLevel(Number(e.target.value))}
+              style={{ width: '100%', accentColor: '#F7DC8A', cursor: 'pointer' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 4 }}>
+              <span>😴 Low</span>
+              <span>⚡ High</span>
+            </div>
+          </div>
+
+          <button
+            onClick={startDay}
+            style={{
+              width: '100%', padding: '18px', borderRadius: 18, border: 'none', cursor: 'pointer',
+              background: 'rgba(255,255,255,0.92)', fontSize: 17, fontWeight: 700,
+              color: '#3D2B1F', backdropFilter: 'blur(8px)',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+            }}
+          >
+            Start your day ✨
+          </button>
+        </motion.div>
+      </div>
     </div>
   );
 }
