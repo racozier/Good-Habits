@@ -68,6 +68,7 @@ export default function GreetScreen() {
   const { navigate, energyLevel, setEnergyLevel } = useAppStore();
   const [weather, setWeather] = useState<Weather | null>(null);
   const [photoUrl] = useState(getDailyPhoto());
+  const [wakeTime, setWakeTime] = useState('');
 
   useEffect(() => {
     if (!navigator.geolocation) return;
@@ -85,7 +86,10 @@ export default function GreetScreen() {
   }, []);
 
   async function startDay() {
-    await db.daySettings.put({ date: today(), energyLevel, greetShown: true });
+    const existing = await db.daySettings.get(today());
+    const payload = { date: today(), energyLevel, greetShown: true, ...(wakeTime ? { wakeTime } : {}) };
+    if (existing) await db.daySettings.update(today(), payload);
+    else await db.daySettings.put(payload);
     navigate('dashboard');
   }
 
@@ -178,20 +182,41 @@ export default function GreetScreen() {
         >
           <div style={{
             background: 'rgba(0,0,0,0.40)', borderRadius: 16, padding: '16px 18px',
-            backdropFilter: 'blur(12px)',
+            backdropFilter: 'blur(12px)', display: 'flex', flexDirection: 'column', gap: 14,
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>⚡ Energy level</span>
-              <span style={{ fontSize: 20, fontWeight: 800, color: '#F7DC8A' }}>{energyLevel}/10</span>
+            {/* Wake-up time */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>🌅 Wake-up time</span>
+                {wakeTime && <span style={{ fontSize: 13, fontWeight: 700, color: '#AAE8DF' }}>{wakeTime}</span>}
+              </div>
+              <input
+                type="time"
+                value={wakeTime}
+                onChange={e => setWakeTime(e.target.value)}
+                style={{
+                  width: '100%', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.25)',
+                  borderRadius: 10, padding: '10px 12px', color: '#fff', fontSize: 15,
+                  outline: 'none', colorScheme: 'dark',
+                }}
+              />
             </div>
-            <input
-              type="range" min={1} max={10} value={energyLevel}
-              onChange={e => setEnergyLevel(Number(e.target.value))}
-              style={{ width: '100%', accentColor: '#F7DC8A', cursor: 'pointer' }}
-            />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 4 }}>
-              <span>😴 Low</span>
-              <span>⚡ High</span>
+
+            {/* Energy level */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>⚡ Energy level</span>
+                <span style={{ fontSize: 20, fontWeight: 800, color: '#F7DC8A' }}>{energyLevel}/10</span>
+              </div>
+              <input
+                type="range" min={1} max={10} value={energyLevel}
+                onChange={e => setEnergyLevel(Number(e.target.value))}
+                style={{ width: '100%', accentColor: '#F7DC8A', cursor: 'pointer' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 4 }}>
+                <span>😴 Low</span>
+                <span>⚡ High</span>
+              </div>
             </div>
           </div>
 

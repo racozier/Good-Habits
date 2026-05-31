@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { CheckSquare, Heart, BookOpen, Gift, Calendar, BookMarked, Moon, Flame, Settings, Sun, Dumbbell } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { db } from '../../db';
-import { today, getGreeting, getWeekStart } from '../../utils/dateUtils';
+import { today, getGreeting, getWeekStart, addDays } from '../../utils/dateUtils';
 import { calcTaskProgress, calcHealthProgress, calcMasterProgress, calcWorkoutProgress } from '../../utils/progress';
 import ProgressBar from '../ui/ProgressBar';
 import RewardPopup from '../ui/RewardPopup';
@@ -28,6 +28,7 @@ export default function DashboardScreen() {
   const [workoutGoal, setWorkoutGoal] = useState(60);
   const [streak, setStreak] = useState(0);
   const [rewardPopup, setRewardPopup] = useState<{ tier: 1|2|3|4 } | null>(null);
+  const [sleepSummary, setSleepSummary] = useState<{ hours: number; mins: number; bedtime: string; wakeTime: string } | null>(null);
 
   useEffect(() => {
     loadProgress();
@@ -64,6 +65,24 @@ export default function DashboardScreen() {
 
     const settings = await db.appSettings.get('settings');
     setStreak(settings?.streak.current ?? 0);
+
+    // Sleep: yesterday's bedtime → today's wake-up time
+    const yesterday = addDays(date, -1);
+    const [todayDs, yesterdayDs] = await Promise.all([
+      db.daySettings.get(date),
+      db.daySettings.get(yesterday),
+    ]);
+    const wakeTime = todayDs?.wakeTime;
+    const bedtime = yesterdayDs?.bedtime;
+    if (wakeTime && bedtime) {
+      const [bH, bM] = bedtime.split(':').map(Number);
+      const [wH, wM] = wakeTime.split(':').map(Number);
+      let totalMins = (wH * 60 + wM) - (bH * 60 + bM);
+      if (totalMins < 0) totalMins += 24 * 60; // crossed midnight
+      setSleepSummary({ hours: Math.floor(totalMins / 60), mins: totalMins % 60, bedtime, wakeTime });
+    } else {
+      setSleepSummary(null);
+    }
 
     const newProgress = { tasks: taskProg, health: healthProg, workout: workoutProg };
     setProgress(newProgress);
@@ -115,9 +134,32 @@ export default function DashboardScreen() {
         </div>
 
         {/* Greeting */}
-        <p style={{ fontSize: 15, color: 'var(--color-text-muted)', margin: '0 0 16px' }}>
+        <p style={{ fontSize: 15, color: 'var(--color-text-muted)', margin: '0 0 12px' }}>
           {getGreeting()}, Ada! 👋  ·  Energy {energyLevel}/10
         </p>
+
+        {/* Sleep summary */}
+        {sleepSummary && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            background: 'var(--color-surface)', borderRadius: 14, padding: '10px 14px',
+            marginBottom: 14, boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+          }}>
+            <Moon size={16} color="#5B9EA0" />
+            <div style={{ flex: 1 }}>
+              <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--color-text)' }}>
+                {sleepSummary.hours}h {sleepSummary.mins > 0 ? `${sleepSummary.mins}m` : ''} slept
+              </span>
+              <span style={{ fontSize: 12, color: 'var(--color-text-muted)', marginLeft: 8 }}>
+                {sleepSummary.bedtime} → {sleepSummary.wakeTime}
+              </span>
+            </div>
+            <button onClick={() => navigate('sleep')} style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 11, color: 'var(--color-primary)', fontWeight: 600, padding: 0,
+            }}>Details</button>
+          </div>
+        )}
 
         {/* Master progress */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card" style={{ marginBottom: 12 }}>
