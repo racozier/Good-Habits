@@ -1,6 +1,21 @@
-import { Sun, Moon } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { db } from '../../db';
+import type { Theme } from '../../types';
+
+const THEMES: { id: Theme; name: string; colors: string[] }[] = [
+  { id: 'warm',       name: 'Warm',        colors: ['#E8916A','#F7DC8A','#C8D5A0','#5B9EA0'] },
+  { id: 'cool',       name: 'Cool',        colors: ['#1A3A6E','#2E5DA8','#E87060','#F5D0A8'] },
+  { id: 'terracotta', name: 'Terracotta',  colors: ['#C8875A','#F5C5A8','#9BB89E','#F9F0E8'] },
+  { id: 'forest',     name: 'Forest',      colors: ['#2E7A3E','#4E9A60','#A8D8A0','#EEF8EE'] },
+  { id: 'navycoral',  name: 'Navy Coral',  colors: ['#1A1F54','#E8715A','#F5D0A8','#D0D8F0'] },
+  { id: 'darkmoss',   name: 'Dark Moss',   colors: ['#2C3B2D','#8C5E3A','#4E6B50','#E8E2D5'] },
+  { id: 'winegold',   name: 'Wine Gold',   colors: ['#8E3040','#C87070','#FAE8A0','#FDF5E8'] },
+  { id: 'linensteel', name: 'Linen Steel', colors: ['#1A3A6E','#2E6B9E','#C8D8E8','#EDE8DC'] },
+  { id: 'teal',       name: 'Teal',        colors: ['#00B5A0','#20D0BC','#AAE8DF','#FFE8F0'] },
+  { id: 'oceanfire',  name: 'Ocean Fire',  colors: ['#0077A8','#0099CC','#FF7400','#FFF3E8'] },
+  { id: 'amber',      name: 'Amber',       colors: ['#F07020','#F59040','#FFE8A0','#FFF8EE'] },
+  { id: 'seafoam',    name: 'Seafoam',     colors: ['#2A6E8C','#48A87A','#D8F5E8','#EEF8F4'] },
+];
 
 export default function SettingsScreen() {
   const { theme, setTheme } = useAppStore();
@@ -24,36 +39,29 @@ export default function SettingsScreen() {
       </div>
 
       <div className="card" style={{ marginBottom: 12 }}>
-        <p style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px' }}>Color Theme</p>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <button onClick={() => setTheme('warm')} style={{
-            flex: 1, padding: 16, borderRadius: 16, border: theme === 'warm' ? '3px solid var(--color-primary)' : '2px solid var(--color-border)',
-            cursor: 'pointer', background: theme === 'warm' ? 'var(--color-secondary)' : 'var(--color-bg)'
-          }}>
-            <div style={{ display: 'flex', marginBottom: 8, borderRadius: 8, overflow: 'hidden', height: 32 }}>
-              {['#E8916A', '#F7DC8A', '#C8D5A0', '#5B9EA0'].map(c => (
-                <div key={c} style={{ flex: 1, background: c }} />
-              ))}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
-              <Sun size={16} />
-              <span style={{ fontSize: 14, fontWeight: theme === 'warm' ? 700 : 400 }}>Warm</span>
-            </div>
-          </button>
-          <button onClick={() => setTheme('cool')} style={{
-            flex: 1, padding: 16, borderRadius: 16, border: theme === 'cool' ? '3px solid var(--color-primary)' : '2px solid var(--color-border)',
-            cursor: 'pointer', background: theme === 'cool' ? 'var(--color-accent)' : 'var(--color-bg)'
-          }}>
-            <div style={{ display: 'flex', marginBottom: 8, borderRadius: 8, overflow: 'hidden', height: 32 }}>
-              {['#0D1B4B', '#1A8A9A', '#F5D5A8', '#F5A07A'].map(c => (
-                <div key={c} style={{ flex: 1, background: c }} />
-              ))}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
-              <Moon size={16} />
-              <span style={{ fontSize: 14, fontWeight: theme === 'cool' ? 700 : 400 }}>Cool</span>
-            </div>
-          </button>
+        <p style={{ fontSize: 15, fontWeight: 700, margin: '0 0 14px' }}>Color Theme</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          {THEMES.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTheme(t.id)}
+              style={{
+                padding: '12px', borderRadius: 16,
+                border: theme === t.id ? '3px solid var(--color-primary)' : '2px solid var(--color-border)',
+                cursor: 'pointer',
+                background: theme === t.id ? 'var(--color-secondary)' : 'var(--color-bg)',
+              }}
+            >
+              <div style={{ display: 'flex', marginBottom: 8, borderRadius: 8, overflow: 'hidden', height: 28 }}>
+                {t.colors.map(c => (
+                  <div key={c} style={{ flex: 1, background: c }} />
+                ))}
+              </div>
+              <span style={{ fontSize: 13, fontWeight: theme === t.id ? 700 : 400, color: 'var(--color-text)' }}>
+                {t.name}
+              </span>
+            </button>
+          ))}
         </div>
       </div>
 

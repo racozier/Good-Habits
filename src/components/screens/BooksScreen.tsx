@@ -10,7 +10,14 @@ import type { Book, BookNote } from '../../types';
 
 const COVER_COLORS = ['#E8916A','#5B9EA0','#C8D5A0','#F7DC8A','#F5A07A','#9B8EC4','#6BAED6','#74C476'];
 
-function BookCover({ title, color, size = 56 }: { title: string; color: string; size?: number }) {
+function BookCover({ title, color, coverImage, size = 56 }: { title: string; color: string; coverImage?: string; size?: number }) {
+  if (coverImage) {
+    return (
+      <div style={{ width: size, height: size, borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
+        <img src={coverImage} alt={title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      </div>
+    );
+  }
   return (
     <div style={{
       width: size, height: size, borderRadius: 10, background: color,
@@ -107,6 +114,19 @@ export default function BooksScreen() {
     if (selectedBook) loadNotes(selectedBook.id);
   }
 
+  async function handleCoverUpload(book: Book, e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const data = ev.target?.result as string;
+      await db.books.update(book.id, { coverImage: data });
+      setSelectedBook({ ...book, coverImage: data });
+      loadBooks();
+    };
+    reader.readAsDataURL(file);
+  }
+
   async function handleEpubUpload(book: Book, e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -138,7 +158,16 @@ export default function BooksScreen() {
 
         {/* Cover + info */}
         <div className="card" style={{ display: 'flex', gap: 16, marginBottom: 12, alignItems: 'center' }}>
-          <BookCover title={selectedBook.title} color={selectedBook.coverColor} size={72} />
+          <label style={{ cursor: 'pointer', position: 'relative' }}>
+            <BookCover title={selectedBook.title} color={selectedBook.coverColor} coverImage={selectedBook.coverImage} size={72} />
+            <div style={{
+              position: 'absolute', bottom: 0, right: 0, background: 'rgba(0,0,0,0.5)',
+              borderRadius: '0 0 10px 0', padding: '3px 5px', display: 'flex', alignItems: 'center',
+            }}>
+              <Upload size={11} color="white" />
+            </div>
+            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleCoverUpload(selectedBook, e)} />
+          </label>
           <div style={{ flex: 1 }}>
             <h3 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 2px' }}>{selectedBook.title}</h3>
             {selectedBook.author && <p style={{ color: 'var(--color-text-muted)', fontSize: 14, margin: '0 0 8px' }}>{selectedBook.author}</p>}
@@ -315,7 +344,7 @@ export default function BooksScreen() {
               cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
             }}>
             <div style={{ position: 'relative' }}>
-              <BookCover title={book.title} color={book.coverColor} size={52} />
+              <BookCover title={book.title} color={book.coverColor} coverImage={book.coverImage} size={52} />
               {book.completed && (
                 <div style={{
                   position: 'absolute', top: -6, right: -6, width: 20, height: 20,

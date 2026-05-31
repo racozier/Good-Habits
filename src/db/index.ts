@@ -3,7 +3,7 @@ import type {
   Task, RecurringTask, WaterEntry, WorkoutEntry, WorkoutGoal,
   ReadingEntry, CleaningEntry, FinancialTask, Book, BookNote, Reward,
   FavoriteBook, LifeGoal, DiaryEntry, SleepEntry, DaySettings, AppSettings,
-  IncomeEntry
+  IncomeEntry, WalkEntry, WeightEntry
 } from '../types';
 
 export class GoodHabitsDB extends Dexie {
@@ -18,6 +18,8 @@ export class GoodHabitsDB extends Dexie {
   books!: Table<Book>;
   bookNotes!: Table<BookNote>;
   incomeEntries!: Table<IncomeEntry>;
+  walkEntries!: Table<WalkEntry>;
+  weightEntries!: Table<WeightEntry>;
   rewards!: Table<Reward>;
   favoriteBook!: Table<FavoriteBook>;
   lifeGoals!: Table<LifeGoal>;
@@ -46,20 +48,14 @@ export class GoodHabitsDB extends Dexie {
       daySettings: 'date',
       appSettings: 'id',
     });
-    // v2: adds bookNotes table
-    this.version(2).stores({
-      bookNotes: 'id, bookId',
-    });
-    // v3: adds incomeEntries table
-    this.version(3).stores({
-      incomeEntries: 'id, date',
-    });
+    this.version(2).stores({ bookNotes: 'id, bookId' });
+    this.version(3).stores({ incomeEntries: 'id, date' });
+    this.version(4).stores({ walkEntries: 'id, date', weightEntries: 'id, date' });
   }
 }
 
 export const db = new GoodHabitsDB();
 
-// Seed default data on first run
 export async function seedDefaultData() {
   const settings = await db.appSettings.get('settings');
   if (settings) return;
@@ -80,8 +76,8 @@ export async function seedDefaultData() {
     { id: 'r4', text: 'Take a walk outside 🌿', durationMinutes: 30, tier: 2 },
     { id: 'r5', text: 'Long relaxing break 🧘', durationMinutes: 45, tier: 3 },
     { id: 'r6', text: 'Delicious treat + cozy time ☕', durationMinutes: 40, tier: 3 },
-    { id: 'r7', text: 'Full recharge — do whatever you love! 🎉', durationMinutes: 60, tier: 4 },
-    { id: 'r8', text: 'Read your favorite book — 3 chapters unlocked! 📚', durationMinutes: 60, tier: 4 },
+    { id: 'r7', text: 'Full recharge — do whatever you love! 🎉', durationMinutes: 90, tier: 4 },
+    { id: 'r8', text: 'Spa day or long luxurious bath 🛁', durationMinutes: 120, tier: 4 },
   ];
   await db.rewards.bulkPut(defaultRewards);
 
