@@ -153,6 +153,7 @@ export interface DaySettings {
   energyLevel: number;
   greetShown: boolean;
   bedtime?: string;
+  wakeTime?: string;
 }
 
 export interface Streak {
