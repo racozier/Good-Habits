@@ -214,7 +214,7 @@ export default function RewardsScreen() {
               {Array.from({ length: favoriteBook.totalChapters }).map((_, i) => {
                 const unlocked = i < favoriteBook.unlockedChapters;
                 return (
-                  <button key={i} onClick={() => unlocked && favoriteBook && openEpub({ data: favoriteBook.epubData, title: favoriteBook.title, startChapter: i })}
+                  <button key={i} onClick={() => unlocked && favoriteBook && openEpub({ data: favoriteBook.epubData, title: favoriteBook.title, startChapter: i, returnScreen: 'rewards' })}
                     style={{
                       width: 44, height: 44, borderRadius: 10, display: 'flex', alignItems: 'center',
                       justifyContent: 'center', flexDirection: 'column', gap: 2,

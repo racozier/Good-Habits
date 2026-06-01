@@ -218,7 +218,7 @@ export default function BooksScreen() {
           </button>
           {selectedBook.epubData ? (
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => openEpub({ data: selectedBook.epubData!, title: selectedBook.title })}
+              <button onClick={() => openEpub({ data: selectedBook.epubData!, title: selectedBook.title, returnScreen: 'books' })}
                 className="btn-primary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 <BookOpen size={18} /> Read EPUB
               </button>
