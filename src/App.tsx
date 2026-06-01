@@ -17,9 +17,10 @@ import SleepScreen from './components/screens/SleepScreen';
 import SettingsScreen from './components/screens/SettingsScreen';
 import BottomNav from './components/layout/BottomNav';
 import Header from './components/layout/Header';
+import EpubReader from './components/ui/EpubReader';
 
 export default function App() {
-  const { screen, theme, navigate, viewingDate, setViewingDate } = useAppStore();
+  const { screen, theme, navigate, viewingDate, setViewingDate, epubReader, closeEpub } = useAppStore();
   const todayStr = today();
   const isViewingPast = viewingDate !== todayStr;
 
@@ -124,6 +125,15 @@ export default function App() {
       </AnimatePresence>
 
       {showNav && <BottomNav />}
+
+      {epubReader && (
+        <EpubReader
+          epubData={epubReader.data}
+          title={epubReader.title}
+          startChapter={epubReader.startChapter}
+          onClose={closeEpub}
+        />
+      )}
     </div>
   );
 }
