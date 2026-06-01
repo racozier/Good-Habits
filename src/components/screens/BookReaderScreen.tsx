@@ -3,7 +3,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Bookmark, BookOpen } from 'lucide
 import JSZip from 'jszip';
 import { useAppStore } from '../../store/appStore';
 
-interface RomanChapter { numeral: string; html: string; }
+interface RomanChapter { numeral: string; html: string; isToc?: boolean; }
 
 function romanToInt(s: string): number {
   const vals: Record<string, number> = { I:1, V:5, X:10, L:50, C:100, D:500, M:1000 };
@@ -30,7 +30,17 @@ function sanitize(html: string): string {
     .replace(/\s+bgcolor="[^"]*"/gi, '')
     .replace(/\s+color="[^"]*"/gi, '')
     .replace(/\s+background="[^"]*"/gi, '')
-    .replace(/<font[^>]*>/gi, '').replace(/<\/font>/gi, '');
+    .replace(/<font[^>]*>/gi, '').replace(/<\/font>/gi, '')
+    .replace(/\s+href="[^"]*"/gi, '')
+    .replace(/\s+href='[^']*'/gi, '');
+}
+
+function isTocFile(html: string): boolean {
+  const doc = new DOMParser().parseFromString('<body>' + html + '</body>', 'text/html');
+  const links = doc.body.querySelectorAll('a[href]');
+  const blocks = doc.body.querySelectorAll('h1,h2,h3,h4,h5,h6,p');
+  // TOC: many links relative to text blocks
+  return links.length >= 4 && links.length > blocks.length;
 }
 
 function extractBody(raw: string): string {
@@ -117,13 +127,16 @@ async function parseEpub(dataUrl: string): Promise<{ chapters: RomanChapter[]; d
   if (!files.length) throw new Error(`No content files found. Paths tried: ${orderedPaths.length}`);
 
   // Build chapters: each file that starts with a Roman numeral = new chapter
-  // Files without Roman numerals get appended to the previous chapter
+  // TOC files are kept separately; other non-Roman files append to previous chapter
+  const tocPages: RomanChapter[] = [];
   const chapters: RomanChapter[] = [];
   for (const { html } of files) {
     if (!html.trim()) continue;
     const numeral = detectRomanNumeral(html);
     if (numeral) {
       chapters.push({ numeral, html });
+    } else if (isTocFile(html)) {
+      tocPages.push({ numeral: 'Contents', html, isToc: true });
     } else if (chapters.length > 0) {
       chapters[chapters.length - 1].html += '\n' + html;
     }
@@ -136,8 +149,18 @@ async function parseEpub(dataUrl: string): Promise<{ chapters: RomanChapter[]; d
       if (f.html.trim()) chapters.push({ numeral: String(i + 1), html: f.html });
     });
   } else {
+    // Deduplicate: remove chapters with same numeral (keep first occurrence)
+    const seen = new Set<string>();
+    const deduped: RomanChapter[] = [];
+    for (const ch of chapters) {
+      if (!seen.has(ch.numeral)) { seen.add(ch.numeral); deduped.push(ch); }
+    }
     // Sort by Roman numeral value so I < II < III... regardless of file order
-    chapters.sort((a, b) => romanToInt(a.numeral) - romanToInt(b.numeral));
+    deduped.sort((a, b) => romanToInt(a.numeral) - romanToInt(b.numeral));
+    chapters.length = 0;
+    chapters.push(...deduped);
+    // Prepend TOC pages for Books tab (handled in component)
+    if (tocPages.length) chapters.unshift(...tocPages);
   }
 
   return { chapters, debug: `${files.length} files, ${chapters.length} chapters` };
@@ -181,10 +204,13 @@ export default function BookReaderScreen() {
 
     parseEpub(epubReader.data)
       .then(({ chapters: chs, debug: d }) => {
-        setChapters(chs);
+        // For rewards: filter out TOC pages entirely
+        const filtered = isRewards ? chs.filter(c => !c.isToc) : chs;
+        setChapters(filtered);
         setDebug(d);
-        // For rewards, use the passed chapter index directly
-        if (isRewards) setCurrent(epubReader.startChapter ?? 0);
+        if (isRewards) {
+          setCurrent(epubReader.startChapter ?? 0);
+        }
         setLoading(false);
       })
       .catch(e => { setError(e.message); setLoading(false); });
@@ -236,7 +262,7 @@ export default function BookReaderScreen() {
           <div style={{ fontWeight: 700, fontSize: 14, color: '#222', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {epubReader.title}
           </div>
-          {ch && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>Chapter {ch.numeral}{!isRewards && chapters.length > 1 ? ` · ${current + 1} / ${chapters.length}` : ''}</div>}
+          {ch && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{ch.isToc ? 'Contents' : `Chapter ${ch.numeral}`}{!isRewards && chapters.length > 1 ? ` · ${current + 1} / ${chapters.length}` : ''}</div>}
         </div>
         {!isRewards && (
           <button onClick={toggleBookmark} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
