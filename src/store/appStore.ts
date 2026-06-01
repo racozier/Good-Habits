@@ -5,9 +5,9 @@ import { today } from '../utils/dateUtils';
 export type Screen =
   | 'greet' | 'dashboard' | 'tasks' | 'health'
   | 'life' | 'books' | 'rewards' | 'calendar'
-  | 'diary' | 'sleep' | 'settings';
+  | 'diary' | 'sleep' | 'settings' | 'reader';
 
-export interface EpubReaderState { data: string; title: string; startChapter?: number; }
+export interface EpubReaderState { data: string; title: string; startChapter?: number; returnScreen: Screen; }
 
 interface AppState {
   screen: Screen;
@@ -26,7 +26,7 @@ interface AppState {
   closeEpub: () => void;
 }
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
   screen: 'greet',
   theme: 'warm',
   todayDate: today(),
@@ -39,6 +39,9 @@ export const useAppStore = create<AppState>((set) => ({
   setEnergyLevel: (energyLevel) => set({ energyLevel }),
   setUserName: (userName) => set({ userName }),
   setViewingDate: (viewingDate) => set({ viewingDate }),
-  openEpub: (epubReader) => set({ epubReader }),
-  closeEpub: () => set({ epubReader: null }),
+  openEpub: (epubReader) => set({ epubReader, screen: 'reader' }),
+  closeEpub: () => {
+    const returnScreen = get().epubReader?.returnScreen ?? 'rewards';
+    set({ epubReader: null, screen: returnScreen });
+  },
 }));
