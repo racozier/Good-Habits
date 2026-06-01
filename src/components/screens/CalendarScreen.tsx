@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { db } from '../../db';
-import { formatShortDate, today } from '../../utils/dateUtils';
+import { formatShortDate, today, addDays } from '../../utils/dateUtils';
 import { useAppStore } from '../../store/appStore';
 import Modal from '../ui/Modal';
+import { SleepGauge, getSleepZone, SLEEP_COLORS, formatSleepLabel } from '../ui/SleepGauge';
 import type { Task } from '../../types';
 
 const TASK_COLORS: Record<string, string> = {
   physical: '#F5A07A', stress: '#D94545', growth: '#5B9EA0', environment: '#C8D5A0', general: '#F7DC8A'
 };
-
 const TASK_LABELS: Record<string, string> = {
   physical: 'Physical', stress: 'Important', growth: 'Growth', environment: 'Environment', general: 'General'
 };
@@ -22,16 +22,14 @@ interface DayMetrics {
   cleaningMins: number;
   walkMins: number;
   weightKg: number | null;
-  sleepDuration: number | null;
-  sleepQuality: string | null;
+  sleepMins: number | null;
   diaryMood: string | null;
-  bedtime: string | null;
 }
 
 interface MonthlySummary {
   totalWorkoutMins: number;
   totalWalkMins: number;
-  avgSleepHours: number | null;
+  avgSleepMins: number | null;
   taskColorCounts: Record<string, number>;
   totalTasks: number;
   totalIncome: number;
@@ -47,40 +45,37 @@ function getMonthDays(year: number, month: number): (string | null)[] {
   return days;
 }
 
+function calcSleepMins(bedtime: string, wakeTime: string): number {
+  const [bH, bM] = bedtime.split(':').map(Number);
+  const [wH, wM] = wakeTime.split(':').map(Number);
+  let mins = (wH * 60 + wM) - (bH * 60 + bM);
+  if (mins < 0) mins += 24 * 60;
+  return mins;
+}
+
 function DayCell({ date, tasks, isToday, onClick }: { date: string; tasks: Task[]; isToday: boolean; onClick: () => void }) {
   const completed = tasks.filter(t => t.completed);
   const day = parseInt(date.split('-')[2]);
-
-  // Count completed tasks per color
   const colorCounts: Record<string, number> = {};
   completed.forEach(t => { colorCounts[t.color] = (colorCounts[t.color] || 0) + 1; });
   const totalCompleted = completed.length;
-
-  // Build proportional color segments
   const segments = Object.entries(colorCounts).map(([color, count]) => ({
     color: TASK_COLORS[color],
     pct: totalCompleted > 0 ? (count / totalCompleted) * 100 : 0,
   }));
 
   return (
-    <button
-      onClick={onClick}
-      style={{
-        aspectRatio: '1', borderRadius: 10, padding: 4,
-        border: isToday ? '2px solid var(--color-primary)' : '1px solid transparent',
-        background: 'var(--color-bg)',
-        cursor: 'pointer', display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center', gap: 3, position: 'relative',
-      }}
-    >
+    <button onClick={onClick} style={{
+      aspectRatio: '1', borderRadius: 10, padding: 4,
+      border: isToday ? '2px solid var(--color-primary)' : '1px solid transparent',
+      background: 'var(--color-bg)', cursor: 'pointer', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', gap: 3,
+    }}>
       <span style={{ fontSize: 12, fontWeight: isToday ? 800 : 500, color: 'var(--color-text)', lineHeight: 1 }}>
         {day}
       </span>
       {totalCompleted > 0 && (
-        <div style={{
-          width: '70%', height: '28%', borderRadius: 4, overflow: 'hidden',
-          display: 'flex', flexDirection: 'row',
-        }}>
+        <div style={{ width: '70%', height: '28%', borderRadius: 4, overflow: 'hidden', display: 'flex' }}>
           {segments.map((seg, i) => (
             <div key={i} style={{ width: `${seg.pct}%`, background: seg.color, height: '100%' }} />
           ))}
@@ -117,55 +112,76 @@ export default function CalendarScreen() {
     const monthStr = `${year}-${String(month + 1).padStart(2, '0')}`;
     const start = `${monthStr}-01`;
     const end = `${monthStr}-31`;
+    const prevMonthLastDay = addDays(start, -1);
 
-    const [tasks, workouts, walks, sleep, income] = await Promise.all([
+    const [tasks, workouts, walks, income, daySettingsArr] = await Promise.all([
       db.tasks.where('date').between(start, end, true, true).toArray(),
       db.workoutEntries.where('date').between(start, end, true, true).toArray(),
       db.walkEntries.where('date').between(start, end, true, true).toArray(),
-      db.sleepEntries.where('date').between(start, end, true, true).toArray(),
       db.incomeEntries.where('date').between(start, end, true, true).toArray(),
+      // Load from prev month last day to month end to catch bedtime pairs
+      db.daySettings.where('date').between(prevMonthLastDay, end, true, true).toArray(),
     ]);
 
     const totalWorkoutMins = workouts.reduce((s, w) => s + w.minutes, 0);
     const totalWalkMins = walks.reduce((s, w) => s + w.minutes, 0);
-    const avgSleepHours = sleep.length > 0
-      ? Math.round((sleep.reduce((s, e) => s + e.durationMinutes, 0) / sleep.length) / 6) / 10
-      : null;
     const totalIncome = income.reduce((s, e) => s + e.amount, 0);
+
+    // Build sleep averages from bedtime/wakeTime pairs
+    const dsMap: Record<string, { bedtime?: string; wakeTime?: string }> = {};
+    daySettingsArr.forEach(ds => { dsMap[ds.date] = ds; });
+
+    const sleepMinsArr: number[] = [];
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    for (let d = 1; d <= lastDay; d++) {
+      const dateStr = `${monthStr}-${String(d).padStart(2, '0')}`;
+      const ds = dsMap[dateStr];
+      if (!ds?.wakeTime) continue;
+      const prev = dsMap[addDays(dateStr, -1)];
+      if (!prev?.bedtime) continue;
+      sleepMinsArr.push(calcSleepMins(prev.bedtime, ds.wakeTime));
+    }
+    const avgSleepMins = sleepMinsArr.length > 0
+      ? Math.round(sleepMinsArr.reduce((s, m) => s + m, 0) / sleepMinsArr.length)
+      : null;
 
     const taskColorCounts: Record<string, number> = {};
     tasks.forEach(t => { taskColorCounts[t.color] = (taskColorCounts[t.color] || 0) + 1; });
 
-    setMonthlySummary({ totalWorkoutMins, totalWalkMins, avgSleepHours, taskColorCounts, totalTasks: tasks.length, totalIncome });
+    setMonthlySummary({ totalWorkoutMins, totalWalkMins, avgSleepMins, taskColorCounts, totalTasks: tasks.length, totalIncome });
   }
 
   async function openDay(date: string) {
     setSelectedDate(date);
     setLoadingMetrics(true);
-    const [tasks, water, workouts, cleaning, walks, weights, sleep, diary, ds] = await Promise.all([
+    const prevDay = addDays(date, -1);
+    const [tasks, water, workouts, cleaning, walks, weights, diary, ds, prevDs] = await Promise.all([
       db.tasks.where('date').equals(date).toArray(),
       db.waterEntries.where('date').equals(date).toArray(),
       db.workoutEntries.where('date').equals(date).toArray(),
       db.cleaningEntries.where('date').equals(date).toArray(),
       db.walkEntries.where('date').equals(date).toArray(),
       db.weightEntries.where('date').equals(date).toArray(),
-      db.sleepEntries.where('date').equals(date).first(),
       db.diaryEntries.where('date').equals(date).first(),
       db.daySettings.get(date),
+      db.daySettings.get(prevDay),
     ]);
 
+    // Sleep = prevDay bedtime → this day wakeTime
+    let sleepMins: number | null = null;
+    if (ds?.wakeTime && prevDs?.bedtime) {
+      sleepMins = calcSleepMins(prevDs.bedtime, ds.wakeTime);
+    }
+
     setDayMetrics({
-      date,
-      tasks,
+      date, tasks,
       waterMl: water.reduce((s, w) => s + w.ml, 0),
       workoutMins: workouts.reduce((s, w) => s + w.minutes, 0),
       cleaningMins: cleaning.reduce((s, c) => s + c.minutes, 0),
       walkMins: walks.reduce((s, w) => s + w.minutes, 0),
       weightKg: weights.length > 0 ? weights[weights.length - 1].kg : null,
-      sleepDuration: sleep?.durationMinutes ?? null,
-      sleepQuality: sleep?.quality ?? null,
+      sleepMins,
       diaryMood: diary?.mood ?? null,
-      bedtime: ds?.bedtime ?? null,
     });
     setLoadingMetrics(false);
   }
@@ -185,9 +201,7 @@ export default function CalendarScreen() {
 
   const days = getMonthDays(year, month);
   const monthName = new Date(year, month).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-
   const MOOD_EMOJI: Record<string, string> = { great: '😊', okay: '😐', bad: '😔' };
-  const QUALITY_EMOJI: Record<string, string> = { great: '😴', okay: '😐', bad: '😫' };
 
   return (
     <div className="screen" style={{ padding: '0 16px 80px' }}>
@@ -195,6 +209,7 @@ export default function CalendarScreen() {
         <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: 'var(--color-text)' }}>Calendar</h2>
       </div>
 
+      {/* Calendar grid */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <button onClick={prevMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 8 }}>
@@ -205,25 +220,15 @@ export default function CalendarScreen() {
             <ChevronRight size={20} color="var(--color-text)" />
           </button>
         </div>
-
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 8 }}>
           {['Mo','Tu','We','Th','Fr','Sa','Su'].map(d => (
             <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: 'var(--color-text-muted)', paddingBottom: 4 }}>{d}</div>
           ))}
         </div>
-
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
           {days.map((date, i) => {
             if (!date) return <div key={i} />;
-            return (
-              <DayCell
-                key={date}
-                date={date}
-                tasks={tasksByDate[date] || []}
-                isToday={date === todayStr}
-                onClick={() => openDay(date)}
-              />
-            );
+            return <DayCell key={date} date={date} tasks={tasksByDate[date] || []} isToday={date === todayStr} onClick={() => openDay(date)} />;
           })}
         </div>
       </div>
@@ -247,6 +252,34 @@ export default function CalendarScreen() {
           <p style={{ fontSize: 15, fontWeight: 700, margin: '0 0 14px', color: 'var(--color-text)' }}>
             📊 {monthName} Summary
           </p>
+
+          {/* Sleep odometer */}
+          {monthlySummary.avgSleepMins !== null && (() => {
+            const zone = getSleepZone(monthlySummary.avgSleepMins);
+            const col = SLEEP_COLORS[zone];
+            const h = Math.floor(monthlySummary.avgSleepMins / 60);
+            const m = monthlySummary.avgSleepMins % 60;
+            return (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 14,
+                background: col.bg + '50', borderRadius: 14, padding: '12px 16px',
+                marginBottom: 14, border: `1.5px solid ${col.bg}`,
+              }}>
+                <SleepGauge totalMins={monthlySummary.avgSleepMins} size="sm" />
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 2 }}>Average sleep this month</div>
+                  <div style={{ fontWeight: 800, fontSize: 20, color: col.text, lineHeight: 1 }}>
+                    {h}h{m > 0 ? ` ${m}m` : ''}
+                  </div>
+                  <div style={{ fontSize: 12, color: col.text, fontWeight: 600, marginTop: 2 }}>
+                    {formatSleepLabel(zone)}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Stat grid */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
             {monthlySummary.totalIncome > 0 && (
               <div style={{ background: 'var(--color-bg)', borderRadius: 12, padding: '10px 12px' }}>
@@ -266,12 +299,6 @@ export default function CalendarScreen() {
                 <p style={{ margin: 0, fontWeight: 700, fontSize: 16, color: 'var(--color-text)' }}>{monthlySummary.totalWalkMins} min</p>
               </div>
             )}
-            {monthlySummary.avgSleepHours !== null && (
-              <div style={{ background: 'var(--color-bg)', borderRadius: 12, padding: '10px 12px' }}>
-                <p style={{ margin: '0 0 2px', fontSize: 12, color: 'var(--color-text-muted)' }}>😴 Avg Sleep</p>
-                <p style={{ margin: 0, fontWeight: 700, fontSize: 16, color: 'var(--color-text)' }}>{monthlySummary.avgSleepHours}h</p>
-              </div>
-            )}
             {monthlySummary.totalTasks > 0 && (
               <div style={{ background: 'var(--color-bg)', borderRadius: 12, padding: '10px 12px' }}>
                 <p style={{ margin: '0 0 2px', fontSize: 12, color: 'var(--color-text-muted)' }}>✅ Tasks</p>
@@ -279,6 +306,8 @@ export default function CalendarScreen() {
               </div>
             )}
           </div>
+
+          {/* Task colour breakdown */}
           {monthlySummary.totalTasks > 0 && Object.keys(monthlySummary.taskColorCounts).length > 0 && (
             <div>
               <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 8 }}>Task breakdown</p>
@@ -312,48 +341,37 @@ export default function CalendarScreen() {
         ) : dayMetrics ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-            {/* Jump to day button */}
             {dayMetrics.date !== todayStr && (
-              <button
-                onClick={() => jumpToDay(dayMetrics.date)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
-                  background: 'var(--color-primary)', color: 'white', border: 'none',
-                  borderRadius: 12, padding: '12px 20px', cursor: 'pointer', fontWeight: 700, fontSize: 14,
-                }}
-              >
+              <button onClick={() => jumpToDay(dayMetrics.date)} style={{
+                display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
+                background: 'var(--color-primary)', color: 'white', border: 'none',
+                borderRadius: 12, padding: '12px 20px', cursor: 'pointer', fontWeight: 700, fontSize: 14,
+              }}>
                 <ExternalLink size={16} />
                 Jump to Day
               </button>
             )}
 
-            {(dayMetrics.diaryMood || dayMetrics.sleepQuality) && (
-              <div style={{ display: 'flex', gap: 12 }}>
-                {dayMetrics.diaryMood && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--color-bg)', borderRadius: 10, padding: '8px 12px' }}>
-                    <span style={{ fontSize: 20 }}>{MOOD_EMOJI[dayMetrics.diaryMood]}</span>
-                    <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Mood</span>
-                  </div>
-                )}
-                {dayMetrics.sleepQuality && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--color-bg)', borderRadius: 10, padding: '8px 12px' }}>
-                    <span style={{ fontSize: 20 }}>{QUALITY_EMOJI[dayMetrics.sleepQuality]}</span>
-                    <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-                      Sleep {dayMetrics.sleepDuration ? `${Math.floor(dayMetrics.sleepDuration / 60)}h ${dayMetrics.sleepDuration % 60}m` : ''}
-                    </span>
-                  </div>
-                )}
+            {dayMetrics.diaryMood && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--color-bg)', borderRadius: 10, padding: '8px 12px', alignSelf: 'flex-start' }}>
+                <span style={{ fontSize: 20 }}>{MOOD_EMOJI[dayMetrics.diaryMood]}</span>
+                <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Mood</span>
               </div>
             )}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               {[
-                { icon: '💧', label: 'Water', value: dayMetrics.waterMl > 0 ? `${dayMetrics.waterMl}ml` : '—' },
-                { icon: '💪', label: 'Workout', value: dayMetrics.workoutMins > 0 ? `${dayMetrics.workoutMins} min` : '—' },
-                { icon: '⚖️', label: 'Weight', value: dayMetrics.weightKg ? `${dayMetrics.weightKg} kg` : '—' },
+                { icon: '💧', label: 'Water',    value: dayMetrics.waterMl > 0 ? `${dayMetrics.waterMl}ml` : '—' },
+                { icon: '💪', label: 'Workout',  value: dayMetrics.workoutMins > 0 ? `${dayMetrics.workoutMins} min` : '—' },
+                { icon: '⚖️', label: 'Weight',   value: dayMetrics.weightKg ? `${dayMetrics.weightKg} kg` : '—' },
                 { icon: '🧹', label: 'Cleaning', value: dayMetrics.cleaningMins >= 20 ? '✓ Done' : '—' },
-                { icon: '🚶', label: 'Walk', value: dayMetrics.walkMins > 0 ? `${dayMetrics.walkMins} min` : '—' },
-                { icon: '🌙', label: 'Bedtime', value: dayMetrics.bedtime || '—' },
+                { icon: '🚶', label: 'Walk',     value: dayMetrics.walkMins > 0 ? `${dayMetrics.walkMins} min` : '—' },
+                {
+                  icon: '😴', label: 'Sleep',
+                  value: dayMetrics.sleepMins
+                    ? `${Math.floor(dayMetrics.sleepMins / 60)}h ${dayMetrics.sleepMins % 60 > 0 ? `${dayMetrics.sleepMins % 60}m` : ''}`
+                    : '—',
+                },
               ].map(({ icon, label, value }) => (
                 <div key={label} style={{ background: 'var(--color-bg)', borderRadius: 12, padding: '10px 12px' }}>
                   <p style={{ margin: '0 0 2px', fontSize: 12, color: 'var(--color-text-muted)' }}>{icon} {label}</p>
