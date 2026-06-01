@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
 import { db } from '../../db';
 import { formatShortDate, today, addDays } from '../../utils/dateUtils';
 import { useAppStore } from '../../store/appStore';
@@ -24,6 +24,7 @@ interface DayMetrics {
   weightKg: number | null;
   sleepMins: number | null;
   diaryMood: string | null;
+  incomeAmount: number;
 }
 
 interface MonthlySummary {
@@ -96,6 +97,7 @@ export default function CalendarScreen() {
   const [dayMetrics, setDayMetrics] = useState<DayMetrics | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
   const [monthlySummary, setMonthlySummary] = useState<MonthlySummary | null>(null);
+  const [tasksExpanded, setTasksExpanded] = useState(false);
 
   useEffect(() => { loadTasks(); loadMonthlySummary(); }, [year, month]);
 
@@ -155,7 +157,7 @@ export default function CalendarScreen() {
     setSelectedDate(date);
     setLoadingMetrics(true);
     const prevDay = addDays(date, -1);
-    const [tasks, water, workouts, cleaning, walks, weights, diary, ds, prevDs] = await Promise.all([
+    const [tasks, water, workouts, cleaning, walks, weights, diary, ds, prevDs, income] = await Promise.all([
       db.tasks.where('date').equals(date).toArray(),
       db.waterEntries.where('date').equals(date).toArray(),
       db.workoutEntries.where('date').equals(date).toArray(),
@@ -165,6 +167,7 @@ export default function CalendarScreen() {
       db.diaryEntries.where('date').equals(date).first(),
       db.daySettings.get(date),
       db.daySettings.get(prevDay),
+      db.incomeEntries.where('date').equals(date).toArray(),
     ]);
 
     // Sleep = prevDay bedtime → this day wakeTime
@@ -173,6 +176,7 @@ export default function CalendarScreen() {
       sleepMins = calcSleepMins(prevDs.bedtime, ds.wakeTime);
     }
 
+    setTasksExpanded(false);
     setDayMetrics({
       date, tasks,
       waterMl: water.reduce((s, w) => s + w.ml, 0),
@@ -182,6 +186,7 @@ export default function CalendarScreen() {
       weightKg: weights.length > 0 ? weights[weights.length - 1].kg : null,
       sleepMins,
       diaryMood: diary?.mood ?? null,
+      incomeAmount: income.reduce((s, e) => s + e.amount, 0),
     });
     setLoadingMetrics(false);
   }
@@ -359,20 +364,22 @@ export default function CalendarScreen() {
               </div>
             )}
 
+            {/* Stats grid — always show weight, water, cleaning; others only if logged */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               {[
-                { icon: '💧', label: 'Water',    value: dayMetrics.waterMl > 0 ? `${dayMetrics.waterMl}ml` : '—' },
-                { icon: '💪', label: 'Workout',  value: dayMetrics.workoutMins > 0 ? `${dayMetrics.workoutMins} min` : '—' },
-                { icon: '⚖️', label: 'Weight',   value: dayMetrics.weightKg ? `${dayMetrics.weightKg} kg` : '—' },
-                { icon: '🧹', label: 'Cleaning', value: dayMetrics.cleaningMins >= 20 ? '✓ Done' : '—' },
-                { icon: '🚶', label: 'Walk',     value: dayMetrics.walkMins > 0 ? `${dayMetrics.walkMins} min` : '—' },
+                { icon: '💧', label: 'Water',    value: dayMetrics.waterMl > 0 ? `${dayMetrics.waterMl}ml` : '—', always: false },
+                { icon: '⚖️', label: 'Weight',   value: dayMetrics.weightKg ? `${dayMetrics.weightKg} kg` : '—', always: true },
+                { icon: '🧹', label: 'Cleaning', value: dayMetrics.cleaningMins >= 20 ? '✓ Done' : '—', always: false },
                 {
-                  icon: '😴', label: 'Sleep',
+                  icon: '😴', label: 'Sleep', always: false,
                   value: dayMetrics.sleepMins
-                    ? `${Math.floor(dayMetrics.sleepMins / 60)}h ${dayMetrics.sleepMins % 60 > 0 ? `${dayMetrics.sleepMins % 60}m` : ''}`
+                    ? `${Math.floor(dayMetrics.sleepMins / 60)}h${dayMetrics.sleepMins % 60 > 0 ? ` ${dayMetrics.sleepMins % 60}m` : ''}`
                     : '—',
                 },
-              ].map(({ icon, label, value }) => (
+                ...(dayMetrics.workoutMins > 0 ? [{ icon: '💪', label: 'Workout', value: `${dayMetrics.workoutMins} min`, always: false }] : []),
+                ...(dayMetrics.walkMins > 0 ? [{ icon: '🚶', label: 'Walk', value: `${dayMetrics.walkMins} min`, always: false }] : []),
+                ...(dayMetrics.incomeAmount > 0 ? [{ icon: '💰', label: 'Income', value: `$${dayMetrics.incomeAmount.toFixed(2)}`, always: false }] : []),
+              ].filter(s => s.always || s.value !== '—').map(({ icon, label, value }) => (
                 <div key={label} style={{ background: 'var(--color-bg)', borderRadius: 12, padding: '10px 12px' }}>
                   <p style={{ margin: '0 0 2px', fontSize: 12, color: 'var(--color-text-muted)' }}>{icon} {label}</p>
                   <p style={{ margin: 0, fontWeight: 700, fontSize: 15, color: value === '—' ? 'var(--color-text-muted)' : 'var(--color-text)' }}>{value}</p>
@@ -380,24 +387,40 @@ export default function CalendarScreen() {
               ))}
             </div>
 
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: 8 }}>
-                Tasks — {dayMetrics.tasks.filter(t => t.completed).length}/{dayMetrics.tasks.length} completed
-              </p>
-              {dayMetrics.tasks.length === 0 && (
+            {/* Completed tasks — expandable, sorted hardest first */}
+            {(() => {
+              const completed = dayMetrics.tasks
+                .filter(t => t.completed)
+                .sort((a, b) => b.difficulty - a.difficulty);
+              const total = dayMetrics.tasks.length;
+              if (total === 0) return (
                 <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>No tasks logged</p>
-              )}
-              {dayMetrics.tasks.map(t => (
-                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 7 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: TASK_COLORS[t.color] }} />
-                  <span style={{
-                    fontSize: 14, flex: 1,
-                    textDecoration: t.completed ? 'line-through' : 'none',
-                    color: t.completed ? 'var(--color-text-muted)' : 'var(--color-text)'
-                  }}>{t.text}</span>
+              );
+              return (
+                <div>
+                  <button onClick={() => setTasksExpanded(e => !e)} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                    marginBottom: tasksExpanded ? 10 : 0,
+                  }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-muted)' }}>
+                      ✅ Completed tasks — {completed.length}/{total}
+                    </span>
+                    {tasksExpanded ? <ChevronUp size={16} color="var(--color-text-muted)" /> : <ChevronDown size={16} color="var(--color-text-muted)" />}
+                  </button>
+                  {tasksExpanded && completed.map(t => (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 7 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: TASK_COLORS[t.color] }} />
+                      <span style={{ fontSize: 14, flex: 1, color: 'var(--color-text)' }}>{t.text}</span>
+                      <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{'★'.repeat(t.difficulty)}</span>
+                    </div>
+                  ))}
+                  {tasksExpanded && completed.length === 0 && (
+                    <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>None completed</p>
+                  )}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
           </div>
         ) : null}
       </Modal>

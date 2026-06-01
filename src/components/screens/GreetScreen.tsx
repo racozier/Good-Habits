@@ -39,8 +39,13 @@ function getDailyPhoto(): string {
 }
 
 function getDailyQuote(): string {
-  const dayIndex = new Date().getDate() % QUOTES.length;
-  return QUOTES[dayIndex];
+  const now = new Date();
+  const hour = now.getHours();
+  const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000);
+  // 0=morning (5-11), 1=afternoon (12-17), 2=evening (18+/before 5)
+  const slot = hour >= 5 && hour < 12 ? 0 : hour >= 12 && hour < 18 ? 1 : 2;
+  const idx = (dayOfYear * 3 + slot) % QUOTES.length;
+  return QUOTES[idx];
 }
 
 interface Weather { temp: number; code: number; description: string; }
