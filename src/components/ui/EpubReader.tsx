@@ -178,7 +178,8 @@ export default function EpubReader({ epubData, title, startChapter = 0, onClose 
   const ch = chapters[current];
 
   return createPortal(
-    <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: '#fdfbf7', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#fdfbf7', display: 'flex', flexDirection: 'column', isolation: 'isolate' }}>
+      <style>{BASE_CSS}</style>
 
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
@@ -229,13 +230,11 @@ export default function EpubReader({ epubData, title, startChapter = 0, onClose 
           <div style={{ padding: 32, textAlign: 'center', color: '#c44', fontSize: 14, lineHeight: 1.6 }}>{error}</div>
         )}
         {ch && !loading && (
-          <>
-            <style>{BASE_CSS}</style>
-            <div
-              style={{ fontSize: 17, lineHeight: 1.75, color: '#2a2a2a', maxWidth: 640, margin: '0 auto' }}
-              dangerouslySetInnerHTML={{ __html: ch.html }}
-            />
-          </>
+          <div
+            key={current}
+            style={{ fontSize: 17, lineHeight: 1.75, color: '#2a2a2a', maxWidth: 640, margin: '0 auto' }}
+            dangerouslySetInnerHTML={{ __html: ch.html }}
+          />
         )}
       </div>
 
