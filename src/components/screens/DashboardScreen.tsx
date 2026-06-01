@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { CheckSquare, Heart, BookOpen, Gift, Calendar, BookMarked, Flame, Settings, Sun, Dumbbell, AlertTriangle } from 'lucide-react';
+import { CheckSquare, Heart, BookOpen, Gift, Calendar, BookMarked, Flame, Settings, Sun, Dumbbell, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { db } from '../../db';
 import { today, getGreeting, getWeekStart, addDays } from '../../utils/dateUtils';
@@ -31,6 +31,7 @@ export default function DashboardScreen() {
   const [rewardPopup, setRewardPopup] = useState<{ tier: 1|2|3|4 } | null>(null);
   const [sleepSummary, setSleepSummary] = useState<{ totalMins: number; bedtime: string; wakeTime: string } | null>(null);
   const [missingBedtime, setMissingBedtime] = useState(false);
+  const [weightStats, setWeightStats] = useState<{ first: number; weekStart: number; current: number } | null>(null);
 
   useEffect(() => {
     loadProgress();
@@ -51,6 +52,19 @@ export default function DashboardScreen() {
 
     const weights = await db.weightEntries.where('date').equals(date).toArray();
     const weightLogged = weights.length > 0;
+
+    // Weight stats for dashboard widget
+    const allWeights = await db.weightEntries.orderBy('date').toArray();
+    if (allWeights.length >= 2) {
+      const firstKg = allWeights[0].kg;
+      const currentKg = allWeights[allWeights.length - 1].kg;
+      const monday = getWeekStart(date);
+      const weekWeights = allWeights.filter(w => w.date >= monday);
+      const weekStartKg = weekWeights.length > 0 ? weekWeights[0].kg : currentKg;
+      setWeightStats({ first: firstKg, weekStart: weekStartKg, current: currentKg });
+    } else {
+      setWeightStats(null);
+    }
 
     const cleaning = await db.cleaningEntries.where('date').equals(date).toArray();
     const cleaningDone = cleaning.reduce((s, c) => s + c.minutes, 0) >= 20;
@@ -255,6 +269,58 @@ export default function DashboardScreen() {
           </motion.button>
         ))}
       </div>
+
+      {/* Weight stats */}
+      {weightStats && (() => {
+        const totalDiff = +(weightStats.current - weightStats.first).toFixed(1);
+        const weekDiff = +(weightStats.current - weightStats.weekStart).toFixed(1);
+        const totalUp = totalDiff > 0;
+        const weekUp = weekDiff > 0;
+        const totalColor = totalUp ? '#E05555' : '#3A9E5A';
+        const weekColor = weekUp ? '#E05555' : '#3A9E5A';
+
+        function StatTile({ label, diff, up, color }: { label: string; diff: number; up: boolean; color: string }) {
+          return (
+            <div onClick={() => navigate('health')} style={{
+              flex: 1, background: 'var(--color-surface)', borderRadius: 16,
+              padding: '14px 16px', cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              display: 'flex', flexDirection: 'column', gap: 6,
+            }}>
+              <span style={{ fontSize: 12, color: 'var(--color-text-muted)', fontWeight: 600 }}>{label}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {up
+                  ? <TrendingUp size={18} color={color} />
+                  : <TrendingDown size={18} color={color} />}
+                <span style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1 }}>
+                  {diff === 0 ? '—' : `${Math.abs(diff)} kg`}
+                </span>
+              </div>
+              {diff !== 0 && (
+                <span style={{ fontSize: 11, color, fontWeight: 600 }}>
+                  {up ? '▲ gained' : '▼ lost'}
+                </span>
+              )}
+            </div>
+          );
+        }
+
+        return (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+            style={{ padding: '16px 20px 8px' }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-muted)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              ⚖️ Weight Stats
+            </p>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <StatTile label="All-time change" diff={totalDiff} up={totalUp} color={totalColor} />
+              <StatTile label="This week" diff={weekDiff} up={weekUp} color={weekColor} />
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--color-text-muted)', margin: '8px 0 0', textAlign: 'center' }}>
+              Current: {weightStats.current} kg
+            </p>
+          </motion.div>
+        );
+      })()}
 
       <RewardPopup
         open={!!rewardPopup}
