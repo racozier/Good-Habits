@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Trash2, Upload, Lock, Unlock, BookOpen } from 'lucide-react';
-import EpubReader from '../ui/EpubReader';
 import { db } from '../../db';
 import { uid } from '../../utils/dateUtils';
 import type { Reward, FavoriteBook } from '../../types';
@@ -11,7 +10,7 @@ const TIER_LABELS = ['', '< 25% done', '25–49% done', '50–74% done', '75–1
 const TIER_EMOJIS = ['', '🌱', '⭐', '🏅', '🏆'];
 
 export default function RewardsScreen() {
-  const { energyLevel } = useAppStore();
+  const { energyLevel, openEpub } = useAppStore();
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [favoriteBook, setFavoriteBook] = useState<FavoriteBook | null>(null);
   const [showAdd, setShowAdd] = useState<number | null>(null);
@@ -20,7 +19,6 @@ export default function RewardsScreen() {
   const [addingTier, setAddingTier] = useState<1 | 2 | 3 | 4>(1);
   const [pendingEpub, setPendingEpub] = useState<{ data: string; defaultName: string } | null>(null);
   const [epubTitle, setEpubTitle] = useState('');
-  const [readingChapter, setReadingChapter] = useState<{ chapterIndex: number } | null>(null);
 
   useEffect(() => { loadRewards(); loadFavoriteBook(); syncUnlockedChapters(); }, []);
 
@@ -216,7 +214,7 @@ export default function RewardsScreen() {
               {Array.from({ length: favoriteBook.totalChapters }).map((_, i) => {
                 const unlocked = i < favoriteBook.unlockedChapters;
                 return (
-                  <button key={i} onClick={() => unlocked && setReadingChapter({ chapterIndex: i })}
+                  <button key={i} onClick={() => unlocked && favoriteBook && openEpub({ data: favoriteBook.epubData, title: favoriteBook.title, startChapter: i })}
                     style={{
                       width: 44, height: 44, borderRadius: 10, display: 'flex', alignItems: 'center',
                       justifyContent: 'center', flexDirection: 'column', gap: 2,
@@ -259,14 +257,6 @@ export default function RewardsScreen() {
           </div>
         )}
       </div>
-      {readingChapter && favoriteBook && (
-        <EpubReader
-          epubData={favoriteBook.epubData}
-          title={`${favoriteBook.title} — Ch. ${readingChapter.chapterIndex + 1}`}
-          startChapter={readingChapter.chapterIndex}
-          onClose={() => setReadingChapter(null)}
-        />
-      )}
     </div>
   );
 }

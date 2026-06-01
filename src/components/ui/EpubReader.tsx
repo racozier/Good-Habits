@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { X, ChevronLeft, ChevronRight, List } from 'lucide-react';
 import JSZip from 'jszip';
 
@@ -177,8 +176,8 @@ export default function EpubReader({ epubData, title, startChapter = 0, onClose 
 
   const ch = chapters[current];
 
-  return createPortal(
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#fdfbf7', display: 'flex', flexDirection: 'column', isolation: 'isolate' }}>
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#fdfbf7', display: 'flex', flexDirection: 'column' }}>
       <style>{BASE_CSS}</style>
 
       <div style={{
@@ -253,7 +252,6 @@ export default function EpubReader({ epubData, title, startChapter = 0, onClose 
           opacity: current >= chapters.length - 1 ? 0.3 : 1, cursor: current >= chapters.length - 1 ? 'default' : 'pointer',
         }}><ChevronRight size={20} color="#444" /></button>
       </div>
-    </div>,
-    document.body
+    </div>
   );
 }

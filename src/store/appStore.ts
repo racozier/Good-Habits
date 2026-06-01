@@ -7,6 +7,8 @@ export type Screen =
   | 'life' | 'books' | 'rewards' | 'calendar'
   | 'diary' | 'sleep' | 'settings';
 
+export interface EpubReaderState { data: string; title: string; startChapter?: number; }
+
 interface AppState {
   screen: Screen;
   theme: Theme;
@@ -14,11 +16,14 @@ interface AppState {
   energyLevel: number;
   userName: string;
   viewingDate: string;
+  epubReader: EpubReaderState | null;
   navigate: (s: Screen) => void;
   setTheme: (t: Theme) => void;
   setEnergyLevel: (n: number) => void;
   setUserName: (n: string) => void;
   setViewingDate: (d: string) => void;
+  openEpub: (state: EpubReaderState) => void;
+  closeEpub: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -28,9 +33,12 @@ export const useAppStore = create<AppState>((set) => ({
   energyLevel: 5,
   userName: 'Ada',
   viewingDate: today(),
+  epubReader: null,
   navigate: (screen) => set({ screen }),
   setTheme: (theme) => set({ theme }),
   setEnergyLevel: (energyLevel) => set({ energyLevel }),
   setUserName: (userName) => set({ userName }),
   setViewingDate: (viewingDate) => set({ viewingDate }),
+  openEpub: (epubReader) => set({ epubReader }),
+  closeEpub: () => set({ epubReader: null }),
 }));

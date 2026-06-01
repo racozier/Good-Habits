@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Trash2, ArrowLeft, Upload, StickyNote, Check, BookOpen } from 'lucide-react';
-import EpubReader from '../ui/EpubReader';
+import { useAppStore } from '../../store/appStore';
 import { db } from '../../db';
 import { uid, today as todayFn } from '../../utils/dateUtils';
 import ProgressBar from '../ui/ProgressBar';
@@ -35,6 +35,7 @@ function BookCover({ title, color, coverImage, size = 56 }: { title: string; col
 }
 
 export default function BooksScreen() {
+  const { openEpub } = useAppStore();
   const [books, setBooks] = useState<Book[]>([]);
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [notes, setNotes] = useState<BookNote[]>([]);
@@ -47,7 +48,6 @@ export default function BooksScreen() {
   const [coverColor, setCoverColor] = useState(COVER_COLORS[0]);
   const [pageInput, setPageInput] = useState('');
   const [noteInput, setNoteInput] = useState('');
-  const [readingEpub, setReadingEpub] = useState<{ data: string; title: string } | null>(null);
 
   useEffect(() => { loadBooks(); }, []);
 
@@ -218,7 +218,7 @@ export default function BooksScreen() {
           </button>
           {selectedBook.epubData ? (
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => setReadingEpub({ data: selectedBook.epubData!, title: selectedBook.title })}
+              <button onClick={() => openEpub({ data: selectedBook.epubData!, title: selectedBook.title })}
                 className="btn-primary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 <BookOpen size={18} /> Read EPUB
               </button>
@@ -250,11 +250,6 @@ export default function BooksScreen() {
         }}>
           <Trash2 size={16} /> Delete book
         </button>
-
-        {/* EPUB reader */}
-        {readingEpub && (
-          <EpubReader epubData={readingEpub.data} title={readingEpub.title} onClose={() => setReadingEpub(null)} />
-        )}
 
         {/* Reading timer modal */}
         <Modal open={showTimer} onClose={() => setShowTimer(false)} title="Reading Session">
