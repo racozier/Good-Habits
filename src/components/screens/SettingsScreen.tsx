@@ -2,19 +2,19 @@ import { useAppStore } from '../../store/appStore';
 import { db } from '../../db';
 import type { Theme } from '../../types';
 
-const THEMES: { id: Theme; name: string; colors: string[] }[] = [
-  { id: 'warm',       name: 'Warm',        colors: ['#E8916A','#F7DC8A','#C8D5A0','#5B9EA0'] },
-  { id: 'cool',       name: 'Cool',        colors: ['#1A3A6E','#2E5DA8','#E87060','#F5D0A8'] },
-  { id: 'terracotta', name: 'Terracotta',  colors: ['#C8875A','#F5C5A8','#9BB89E','#F9F0E8'] },
-  { id: 'forest',     name: 'Forest',      colors: ['#2E7A3E','#4E9A60','#A8D8A0','#EEF8EE'] },
-  { id: 'navycoral',  name: 'Navy Coral',  colors: ['#1A1F54','#E8715A','#F5D0A8','#D0D8F0'] },
-  { id: 'darkmoss',   name: 'Dark Moss',   colors: ['#2C3B2D','#8C5E3A','#4E6B50','#E8E2D5'] },
-  { id: 'winegold',   name: 'Wine Gold',   colors: ['#8E3040','#C87070','#FAE8A0','#FDF5E8'] },
-  { id: 'linensteel', name: 'Linen Steel', colors: ['#1A3A6E','#2E6B9E','#C8D8E8','#EDE8DC'] },
-  { id: 'teal',       name: 'Teal',        colors: ['#00B5A0','#20D0BC','#AAE8DF','#FFE8F0'] },
-  { id: 'oceanfire',  name: 'Ocean Fire',  colors: ['#0077A8','#0099CC','#FF7400','#FFF3E8'] },
-  { id: 'amber',      name: 'Amber',       colors: ['#F07020','#F59040','#FFE8A0','#FFF8EE'] },
-  { id: 'seafoam',    name: 'Seafoam',     colors: ['#2A6E8C','#48A87A','#D8F5E8','#EEF8F4'] },
+const THEMES: { id: Theme; name: string; colors: string[]; dark?: boolean }[] = [
+  { id: 'warm',       name: 'Warm',        colors: ['#E8916A','#F7DC8A','#C8D5A0','#FDF6EC'] },
+  { id: 'cool',       name: 'Cool',        colors: ['#1A3A6E','#2E5DA8','#E87060','#DDE5F5'] },
+  { id: 'terracotta', name: 'Terracotta',  colors: ['#C8675A','#E8A87A','#8BAE8E','#F5E8DC'] },
+  { id: 'forest',     name: 'Forest',      colors: ['#2A7038','#3E9050','#88C878','#D8EED8'] },
+  { id: 'navycoral',  name: 'Navy Coral',  colors: ['#0A1040','#E8604A','#F5C080','#D8DFF0'] },
+  { id: 'darkmoss',   name: 'Dark Moss',   colors: ['#181E18','#C08850','#507858','#222C24'], dark: true },
+  { id: 'winegold',   name: 'Wine Gold',   colors: ['#140810','#D07080','#C07830','#201018'], dark: true },
+  { id: 'linensteel', name: 'Linen Steel', colors: ['#2060A0','#3880C0','#B0C8E0','#E8E0CC'] },
+  { id: 'teal',       name: 'Teal',        colors: ['#00A890','#10C8B0','#80D8CE','#C8F0EC'] },
+  { id: 'oceanfire',  name: 'Ocean Fire',  colors: ['#0068A0','#0088C8','#F06800','#D0E8F8'] },
+  { id: 'amber',      name: 'Amber',       colors: ['#E05800','#E89830','#FFE890','#FAECD8'] },
+  { id: 'seafoam',    name: 'Seafoam',     colors: ['#1E6888','#38A870','#C0F0D8','#D8F0E8'] },
 ];
 
 export default function SettingsScreen() {
@@ -47,9 +47,11 @@ export default function SettingsScreen() {
               onClick={() => setTheme(t.id)}
               style={{
                 padding: '12px', borderRadius: 16,
-                border: theme === t.id ? '3px solid var(--color-primary)' : '2px solid var(--color-border)',
+                border: theme === t.id ? `3px solid ${t.colors[0]}` : '2px solid var(--color-border)',
                 cursor: 'pointer',
-                background: theme === t.id ? 'var(--color-secondary)' : 'var(--color-bg)',
+                background: theme === t.id
+                  ? (t.dark ? t.colors[0] : t.colors[3])
+                  : 'var(--color-bg)',
               }}
             >
               <div style={{ display: 'flex', marginBottom: 8, borderRadius: 8, overflow: 'hidden', height: 28 }}>
