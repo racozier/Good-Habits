@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, ArrowLeft, Upload, StickyNote, Check } from 'lucide-react';
+import { Plus, Trash2, ArrowLeft, Upload, StickyNote, Check, BookOpen } from 'lucide-react';
+import EpubReader from '../ui/EpubReader';
 import { db } from '../../db';
 import { uid, today as todayFn } from '../../utils/dateUtils';
 import ProgressBar from '../ui/ProgressBar';
@@ -46,6 +47,7 @@ export default function BooksScreen() {
   const [coverColor, setCoverColor] = useState(COVER_COLORS[0]);
   const [pageInput, setPageInput] = useState('');
   const [noteInput, setNoteInput] = useState('');
+  const [readingEpub, setReadingEpub] = useState<{ data: string; title: string } | null>(null);
 
   useEffect(() => { loadBooks(); }, []);
 
@@ -214,16 +216,31 @@ export default function BooksScreen() {
             <StickyNote size={18} color="var(--color-primary)" />
             Notes ({notes.length > 0 ? notes.length : '...'})
           </button>
-          <label style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            cursor: 'pointer', padding: '12px', border: '1.5px dashed var(--color-border)', borderRadius: 12
-          }}>
-            <Upload size={18} color="var(--color-primary)" />
-            <span style={{ fontSize: 14, color: 'var(--color-primary)', fontWeight: 600 }}>
-              {selectedBook.epubData ? '✓ EPUB uploaded' : 'Upload EPUB to read in-app'}
-            </span>
-            <input type="file" accept=".epub" style={{ display: 'none' }} onChange={e => handleEpubUpload(selectedBook, e)} />
-          </label>
+          {selectedBook.epubData ? (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setReadingEpub({ data: selectedBook.epubData!, title: selectedBook.title })}
+                className="btn-primary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <BookOpen size={18} /> Read EPUB
+              </button>
+              <label style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                cursor: 'pointer', padding: '12px 14px', border: '1.5px dashed var(--color-border)',
+                borderRadius: 12, fontSize: 13, color: 'var(--color-text-muted)', fontWeight: 500,
+              }}>
+                <Upload size={15} color="var(--color-text-muted)" /> Replace
+                <input type="file" accept=".epub" style={{ display: 'none' }} onChange={e => handleEpubUpload(selectedBook, e)} />
+              </label>
+            </div>
+          ) : (
+            <label style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              cursor: 'pointer', padding: '12px', border: '1.5px dashed var(--color-border)', borderRadius: 12
+            }}>
+              <Upload size={18} color="var(--color-primary)" />
+              <span style={{ fontSize: 14, color: 'var(--color-primary)', fontWeight: 600 }}>Upload EPUB to read in-app</span>
+              <input type="file" accept=".epub" style={{ display: 'none' }} onChange={e => handleEpubUpload(selectedBook, e)} />
+            </label>
+          )}
         </div>
 
         <button onClick={() => deleteBook(selectedBook.id)} style={{
@@ -233,6 +250,11 @@ export default function BooksScreen() {
         }}>
           <Trash2 size={16} /> Delete book
         </button>
+
+        {/* EPUB reader */}
+        {readingEpub && (
+          <EpubReader epubData={readingEpub.data} title={readingEpub.title} onClose={() => setReadingEpub(null)} />
+        )}
 
         {/* Reading timer modal */}
         <Modal open={showTimer} onClose={() => setShowTimer(false)} title="Reading Session">
