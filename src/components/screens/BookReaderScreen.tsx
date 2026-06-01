@@ -59,35 +59,55 @@ async function parseEpubByRomanNumerals(dataUrl: string): Promise<{ chapters: Ro
   const opfDir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : '';
   const opfXml = await zip.file(opfPath)!.async('string');
 
-  // Manifest
+  // Manifest — try both single and double quotes, with and without \b
   const manifest: Record<string, string> = {};
   for (const m of opfXml.matchAll(/<item\s[^>]*\bid="([^"]+)"[^>]*\bhref="([^"]+)"/g)) {
     manifest[m[1]] = m[2];
   }
+  // Some EPUBs use single quotes
+  for (const m of opfXml.matchAll(/<item\s[^>]*\bid='([^']+)'[^>]*\bhref='([^']+)'/g)) {
+    manifest[m[1]] = m[2];
+  }
 
-  // Spine order
-  const spineIds = [...opfXml.matchAll(/<itemref\s[^>]*\bidref="([^"]+)"/g)].map(m => m[1]);
+  // Spine order — try both quote styles
+  let spineIds = [...opfXml.matchAll(/<itemref\s[^>]*\bidref="([^"]+)"/g)].map(m => m[1]);
+  if (spineIds.length === 0) {
+    spineIds = [...opfXml.matchAll(/<itemref\s[^>]*idref="([^"]+)"/g)].map(m => m[1]);
+  }
+  if (spineIds.length === 0) {
+    spineIds = [...opfXml.matchAll(/idref=['"]([^'"]+)['"]/g)].map(m => m[1]);
+  }
+
+  // Build ordered file paths from spine
+  let orderedPaths: string[] = [];
+  for (const id of spineIds) {
+    const href = manifest[id];
+    if (href) orderedPaths.push(opfDir + href);
+  }
+
+  // Fallback: if spine gave nothing, scan zip for all HTML/XHTML files
+  if (orderedPaths.length === 0) {
+    zip.forEach((path) => {
+      if (path.match(/\.(xhtml|html|htm)$/i) && !path.match(/toc|nav\./i)) {
+        orderedPaths.push(path);
+      }
+    });
+    orderedPaths.sort();
+  }
 
   let combined = '';
   let filesProcessed = 0;
 
-  for (const id of spineIds) {
-    const href = manifest[id];
-    if (!href) continue;
-    // Accept any file type — some EPUBs use .xhtml, some .html, some omit extension
-    const fullPath = opfDir + href;
-
-    // Try different path variations
+  for (const fullPath of orderedPaths) {
     const file = zip.file(fullPath)
-      ?? zip.file(href)
-      ?? zip.file(href.replace(/^\//, ''));
+      ?? zip.file(fullPath.replace(/^\//, ''));
     if (!file) continue;
 
     let raw = await file.async('string');
     filesProcessed++;
 
     // Inline images
-    const fileDir = fullPath.includes('/') ? fullPath.slice(0, fullPath.lastIndexOf('/') + 1) : '';
+    const fileDir = fullPath.includes('/') ? fullPath.slice(0, fullPath.lastIndexOf('/') + 1) : opfDir;
     for (const m of [...raw.matchAll(/src="([^"]+\.(jpe?g|png|gif|svg|webp))"/gi)]) {
       const rel = m[1];
       if (rel.startsWith('data:') || rel.startsWith('http')) continue;
