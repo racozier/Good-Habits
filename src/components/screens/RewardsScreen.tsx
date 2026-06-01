@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Upload, Lock, Unlock } from 'lucide-react';
+import { Plus, Trash2, Upload, Lock, Unlock, BookOpen } from 'lucide-react';
+import EpubReader from '../ui/EpubReader';
 import { db } from '../../db';
 import { uid } from '../../utils/dateUtils';
 import type { Reward, FavoriteBook } from '../../types';
@@ -19,6 +20,7 @@ export default function RewardsScreen() {
   const [addingTier, setAddingTier] = useState<1 | 2 | 3 | 4>(1);
   const [pendingEpub, setPendingEpub] = useState<{ data: string; defaultName: string } | null>(null);
   const [epubTitle, setEpubTitle] = useState('');
+  const [readingChapter, setReadingChapter] = useState<{ chapterIndex: number } | null>(null);
 
   useEffect(() => { loadRewards(); loadFavoriteBook(); syncUnlockedChapters(); }, []);
 
@@ -214,15 +216,19 @@ export default function RewardsScreen() {
               {Array.from({ length: favoriteBook.totalChapters }).map((_, i) => {
                 const unlocked = i < favoriteBook.unlockedChapters;
                 return (
-                  <div key={i} style={{
-                    width: 36, height: 36, borderRadius: 8, display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', fontSize: 11, fontWeight: 600,
-                    background: unlocked ? 'var(--color-secondary)' : 'var(--color-bg)',
-                    color: unlocked ? 'var(--color-text)' : 'var(--color-text-muted)',
-                    border: '1.5px solid var(--color-border)'
-                  }}>
-                    {unlocked ? <Unlock size={14} /> : <Lock size={14} />}
-                  </div>
+                  <button key={i} onClick={() => unlocked && setReadingChapter({ chapterIndex: i })}
+                    style={{
+                      width: 44, height: 44, borderRadius: 10, display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', flexDirection: 'column', gap: 2,
+                      background: unlocked ? 'var(--color-secondary)' : 'var(--color-bg)',
+                      color: unlocked ? 'var(--color-text)' : 'var(--color-text-muted)',
+                      border: unlocked ? '2px solid var(--color-primary)' : '1.5px solid var(--color-border)',
+                      cursor: unlocked ? 'pointer' : 'default',
+                      padding: 0,
+                    }}>
+                    {unlocked ? <BookOpen size={14} /> : <Lock size={13} />}
+                    <span style={{ fontSize: 9, fontWeight: 700 }}>{i + 1}</span>
+                  </button>
                 );
               })}
             </div>
@@ -253,6 +259,14 @@ export default function RewardsScreen() {
           </div>
         )}
       </div>
+      {readingChapter && favoriteBook && (
+        <EpubReader
+          epubData={favoriteBook.epubData}
+          title={`${favoriteBook.title} — Ch. ${readingChapter.chapterIndex + 1}`}
+          startChapter={readingChapter.chapterIndex}
+          onClose={() => setReadingChapter(null)}
+        />
+      )}
     </div>
   );
 }
