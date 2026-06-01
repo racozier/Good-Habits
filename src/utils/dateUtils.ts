@@ -1,5 +1,17 @@
+// All date logic is pinned to GMT+2 (SAST/CAT – no DST)
+function nowGMT2(): Date {
+  return new Date(Date.now() + 2 * 60 * 60 * 1000);
+}
+
 export function today(): string {
-  return new Date().toISOString().split('T')[0];
+  return nowGMT2().toISOString().split('T')[0];
+}
+
+export function getGreeting(): string {
+  const hour = nowGMT2().getUTCHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
 }
 
 export function getWeekStart(dateStr: string): string {
@@ -36,12 +48,6 @@ export function addDays(dateStr: string, n: number): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-export function getGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
-}
 
 export function calcSleepDuration(bedtime: string, wakeTime: string): number {
   const [bh, bm] = bedtime.split(':').map(Number);

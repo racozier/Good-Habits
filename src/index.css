@@ -15,147 +15,158 @@
   --color-border: #E8D5C0;
 }
 
+/* Cool — deep navy + coral, blue-tinted background */
 [data-theme="cool"] {
   --color-primary: #1A3A6E;
   --color-primary-light: #2E5DA8;
   --color-secondary: #E87060;
   --color-accent: #F5D0A8;
   --color-muted: #8C6050;
-  --color-bg: #FAF5EE;
-  --color-surface: #FFFFFF;
-  --color-text: #1A1F54;
-  --color-text-muted: #4A507A;
-  --color-border: #DDD0C0;
+  --color-bg: #DDE5F5;
+  --color-surface: #EDF2FF;
+  --color-text: #0A1530;
+  --color-text-muted: #3A4870;
+  --color-border: #B8C8E8;
 }
 
+/* Terracotta — earthy sandy, creamy light */
 [data-theme="terracotta"] {
-  --color-primary: #C8875A;
-  --color-primary-light: #E0A880;
-  --color-secondary: #F5C5A8;
-  --color-accent: #9BB89E;
+  --color-primary: #C8675A;
+  --color-primary-light: #E08878;
+  --color-secondary: #E8A87A;
+  --color-accent: #8BAE8E;
   --color-muted: #8B7355;
-  --color-bg: #F9F0E8;
-  --color-surface: #FFFFFF;
-  --color-text: #3D2414;
-  --color-text-muted: #7A6050;
-  --color-border: #E8D5C0;
+  --color-bg: #F5E8DC;
+  --color-surface: #FDF6F0;
+  --color-text: #3A1A0A;
+  --color-text-muted: #6A4838;
+  --color-border: #DDC0A8;
 }
 
+/* Forest — rich green tinted */
 [data-theme="forest"] {
-  --color-primary: #2E7A3E;
-  --color-primary-light: #4E9A60;
-  --color-secondary: #A8D8A0;
-  --color-accent: #D4F0D4;
-  --color-muted: #5A9E6B;
-  --color-bg: #EEF8EE;
-  --color-surface: #FFFFFF;
-  --color-text: #1A3D22;
-  --color-text-muted: #4A7054;
-  --color-border: #C0DEC0;
+  --color-primary: #2A7038;
+  --color-primary-light: #3E9050;
+  --color-secondary: #88C878;
+  --color-accent: #C8E8C8;
+  --color-muted: #4A9060;
+  --color-bg: #D8EED8;
+  --color-surface: #EAF7EA;
+  --color-text: #0E2A14;
+  --color-text-muted: #2E6040;
+  --color-border: #A8D8A8;
 }
 
+/* Navy Coral — navy background, bold coral */
 [data-theme="navycoral"] {
-  --color-primary: #E8715A;
-  --color-primary-light: #F59080;
-  --color-secondary: #F5D0A8;
-  --color-accent: #D0D8F0;
-  --color-muted: #8A5A4A;
-  --color-bg: #FAF5EE;
-  --color-surface: #FFFFFF;
-  --color-text: #1A1F54;
-  --color-text-muted: #4A507A;
-  --color-border: #DDD0C0;
+  --color-primary: #E8604A;
+  --color-primary-light: #F58070;
+  --color-secondary: #F5C080;
+  --color-accent: #C0CCF0;
+  --color-muted: #7A5040;
+  --color-bg: #D8DFF0;
+  --color-surface: #E8EDF8;
+  --color-text: #0A1040;
+  --color-text-muted: #3A4068;
+  --color-border: #B0BCD8;
 }
 
+/* Dark Moss — actual dark theme, charcoal + copper */
 [data-theme="darkmoss"] {
-  --color-primary: #8C5E3A;
-  --color-primary-light: #B07A52;
-  --color-secondary: #4E6B50;
-  --color-accent: #D8D0C0;
-  --color-muted: #6E8070;
-  --color-bg: #E8E2D5;
-  --color-surface: #F5F0E8;
-  --color-text: #2C3B2D;
-  --color-text-muted: #5A6860;
-  --color-border: #C8C0B0;
+  --color-primary: #C08850;
+  --color-primary-light: #D8A870;
+  --color-secondary: #507858;
+  --color-accent: #889870;
+  --color-muted: #88A090;
+  --color-bg: #181E18;
+  --color-surface: #222C24;
+  --color-text: #E8E0D0;
+  --color-text-muted: #98A890;
+  --color-border: #303C32;
 }
 
+/* Wine Gold — actual dark theme, deep burgundy + gold */
 [data-theme="winegold"] {
-  --color-primary: #8E3040;
-  --color-primary-light: #B05060;
-  --color-secondary: #C87070;
-  --color-accent: #FAE8A0;
-  --color-muted: #A06060;
-  --color-bg: #FDF5E8;
-  --color-surface: #FFFFFF;
-  --color-text: #4E1A24;
-  --color-text-muted: #8A5060;
-  --color-border: #E8D0C0;
+  --color-primary: #D07080;
+  --color-primary-light: #E09090;
+  --color-secondary: #C07830;
+  --color-accent: #D8A840;
+  --color-muted: #A07870;
+  --color-bg: #140810;
+  --color-surface: #201018;
+  --color-text: #F0E0CC;
+  --color-text-muted: #C0A090;
+  --color-border: #381828;
 }
 
+/* Linen Steel — warm linen + steel blue */
 [data-theme="linensteel"] {
-  --color-primary: #2E6B9E;
-  --color-primary-light: #4A88BA;
-  --color-secondary: #C8D8E8;
-  --color-accent: #EDE8DC;
-  --color-muted: #8C7060;
-  --color-bg: #EDE8DC;
-  --color-surface: #FAFAF6;
-  --color-text: #1A3A6E;
-  --color-text-muted: #5A6880;
-  --color-border: #D0C8B8;
+  --color-primary: #2060A0;
+  --color-primary-light: #3880C0;
+  --color-secondary: #B0C8E0;
+  --color-accent: #E8DEC8;
+  --color-muted: #7A6858;
+  --color-bg: #E8E0CC;
+  --color-surface: #F4F0E4;
+  --color-text: #102040;
+  --color-text-muted: #485870;
+  --color-border: #C8C0A8;
 }
 
+/* Teal — vivid aqua, strong teal tint */
 [data-theme="teal"] {
-  --color-primary: #00B5A0;
-  --color-primary-light: #20D0BC;
-  --color-secondary: #AAE8DF;
-  --color-accent: #FFE8F0;
-  --color-muted: #5DCFBF;
-  --color-bg: #F0FCFC;
-  --color-surface: #FFFFFF;
-  --color-text: #004A44;
-  --color-text-muted: #5A8C88;
-  --color-border: #C0E8E4;
+  --color-primary: #00A890;
+  --color-primary-light: #10C8B0;
+  --color-secondary: #80D8CE;
+  --color-accent: #FFB0CC;
+  --color-muted: #40B8A8;
+  --color-bg: #C8F0EC;
+  --color-surface: #E0FAF7;
+  --color-text: #003028;
+  --color-text-muted: #287870;
+  --color-border: #90D8D0;
 }
 
+/* Ocean Fire — deep ocean blue + vivid orange */
 [data-theme="oceanfire"] {
-  --color-primary: #0077A8;
-  --color-primary-light: #0099CC;
-  --color-secondary: #FF7400;
-  --color-accent: #FFF3E8;
-  --color-muted: #F0A87A;
-  --color-bg: #FFF3E8;
-  --color-surface: #FFFFFF;
-  --color-text: #003A54;
-  --color-text-muted: #5A7080;
-  --color-border: #D8E8F0;
+  --color-primary: #0068A0;
+  --color-primary-light: #0088C8;
+  --color-secondary: #F06800;
+  --color-accent: #FFE0B8;
+  --color-muted: #D09060;
+  --color-bg: #D0E8F8;
+  --color-surface: #E4F3FF;
+  --color-text: #001828;
+  --color-text-muted: #285878;
+  --color-border: #A0C8E8;
 }
 
+/* Amber — rich warm orange, chocolate accents */
 [data-theme="amber"] {
-  --color-primary: #F07020;
-  --color-primary-light: #F59040;
-  --color-secondary: #F5A060;
-  --color-accent: #FFE8A0;
-  --color-muted: #8C5A30;
-  --color-bg: #FFF8EE;
-  --color-surface: #FFFFFF;
-  --color-text: #3D1C08;
-  --color-text-muted: #7A5030;
-  --color-border: #E8C8A0;
+  --color-primary: #E05800;
+  --color-primary-light: #F07020;
+  --color-secondary: #E89830;
+  --color-accent: #FFE890;
+  --color-muted: #885020;
+  --color-bg: #FAECD8;
+  --color-surface: #FFF7EE;
+  --color-text: #280E00;
+  --color-text-muted: #603010;
+  --color-border: #E8C070;
 }
 
+/* Seafoam — teal-green + navy */
 [data-theme="seafoam"] {
-  --color-primary: #2A6E8C;
-  --color-primary-light: #3A8CAA;
-  --color-secondary: #48A87A;
-  --color-accent: #D8F5E8;
-  --color-muted: #5A9EA8;
-  --color-bg: #EEF8F4;
-  --color-surface: #FFFFFF;
-  --color-text: #1A3A5C;
-  --color-text-muted: #4A6870;
-  --color-border: #C0DDD8;
+  --color-primary: #1E6888;
+  --color-primary-light: #2888A8;
+  --color-secondary: #38A870;
+  --color-accent: #C0F0D8;
+  --color-muted: #488898;
+  --color-bg: #D8F0E8;
+  --color-surface: #EAF8F0;
+  --color-text: #0A2838;
+  --color-text-muted: #306068;
+  --color-border: #98D8C0;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
