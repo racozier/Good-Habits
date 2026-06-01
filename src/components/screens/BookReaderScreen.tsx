@@ -5,6 +5,18 @@ import { useAppStore } from '../../store/appStore';
 
 interface RomanChapter { numeral: string; html: string; }
 
+function romanToInt(s: string): number {
+  const vals: Record<string, number> = { I:1, V:5, X:10, L:50, C:100, D:500, M:1000 };
+  let result = 0;
+  const t = s.toUpperCase();
+  for (let i = 0; i < t.length; i++) {
+    const cur = vals[t[i]] ?? 0;
+    const next = vals[t[i + 1]] ?? 0;
+    result += cur < next ? -cur : cur;
+  }
+  return result;
+}
+
 const ROMAN_RE = /^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$/i;
 function isRoman(s: string): boolean {
   const t = s.trim().toUpperCase();
@@ -123,6 +135,9 @@ async function parseEpub(dataUrl: string): Promise<{ chapters: RomanChapter[]; d
     files.forEach((f, i) => {
       if (f.html.trim()) chapters.push({ numeral: String(i + 1), html: f.html });
     });
+  } else {
+    // Sort by Roman numeral value so I < II < III... regardless of file order
+    chapters.sort((a, b) => romanToInt(a.numeral) - romanToInt(b.numeral));
   }
 
   return { chapters, debug: `${files.length} files, ${chapters.length} chapters` };
