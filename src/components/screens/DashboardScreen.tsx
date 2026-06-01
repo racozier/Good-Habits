@@ -12,13 +12,13 @@ import type { Screen } from '../../store/appStore';
 
 interface SectionProgress { tasks: number; health: number; workout: number; }
 
-const CARD_NAV: { icon: React.FC<any>; label: string; screen: Screen; color: string }[] = [
-  { icon: CheckSquare, label: 'Tasks',    screen: 'tasks',    color: '#E8916A' },
-  { icon: Heart,       label: 'Health',   screen: 'health',   color: '#F5A07A' },
-  { icon: BookOpen,    label: 'Books',    screen: 'books',    color: '#C8D5A0' },
-  { icon: Gift,        label: 'Rewards',  screen: 'rewards',  color: '#F7DC8A' },
-  { icon: Calendar,    label: 'Calendar', screen: 'calendar', color: '#E8916A' },
-  { icon: BookMarked,  label: 'Diary',    screen: 'diary',    color: '#5B9EA0' },
+const CARD_NAV: { icon: React.FC<any>; label: string; screen: Screen; cssVar: string }[] = [
+  { icon: CheckSquare, label: 'Tasks',    screen: 'tasks',    cssVar: '--color-primary' },
+  { icon: Heart,       label: 'Health',   screen: 'health',   cssVar: '--color-primary' },
+  { icon: BookOpen,    label: 'Books',    screen: 'books',    cssVar: '--color-accent' },
+  { icon: Gift,        label: 'Rewards',  screen: 'rewards',  cssVar: '--color-accent' },
+  { icon: Calendar,    label: 'Calendar', screen: 'calendar', cssVar: '--color-primary' },
+  { icon: BookMarked,  label: 'Diary',    screen: 'diary',    cssVar: '--color-accent' },
 ];
 
 
@@ -233,7 +233,7 @@ export default function DashboardScreen() {
 
       {/* Navigation cards */}
       <div style={{ padding: '0 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        {CARD_NAV.map(({ icon: Icon, label, screen, color }, i) => (
+        {CARD_NAV.map(({ icon: Icon, label, screen, cssVar }, i) => (
           <motion.button
             key={screen}
             initial={{ opacity: 0, y: 20 }}
@@ -241,14 +241,15 @@ export default function DashboardScreen() {
             transition={{ delay: 0.05 * i }}
             onClick={() => navigate(screen)}
             style={{
-              background: 'var(--color-surface)', border: 'none', borderRadius: 16,
-              padding: '20px 16px', cursor: 'pointer', textAlign: 'left',
+              background: 'var(--color-surface)', border: `1.5px solid var(${cssVar})`,
+              borderRadius: 16, padding: '20px 16px', cursor: 'pointer', textAlign: 'left',
               boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 8
             }}
           >
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: color + '30',
+            <div style={{ width: 40, height: 40, borderRadius: 12,
+              background: `color-mix(in srgb, var(${cssVar}) 20%, transparent)`,
               display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Icon size={20} color={color} />
+              <Icon size={20} color={`var(${cssVar})`} />
             </div>
             <span style={{ fontWeight: 600, fontSize: 15, color: 'var(--color-text)' }}>{label}</span>
           </motion.button>

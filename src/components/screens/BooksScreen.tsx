@@ -11,9 +11,12 @@ import type { Book, BookNote } from '../../types';
 const COVER_COLORS = ['#E8916A','#5B9EA0','#C8D5A0','#F7DC8A','#F5A07A','#9B8EC4','#6BAED6','#74C476'];
 
 function BookCover({ title, color, coverImage, size = 56 }: { title: string; color: string; coverImage?: string; size?: number }) {
+  const w = coverImage ? Math.round(size * 0.67) : size;
+  const h = coverImage ? size : size;
   if (coverImage) {
     return (
-      <div style={{ width: size, height: size, borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
+      <div style={{ width: w, height: h, borderRadius: 8, overflow: 'hidden', flexShrink: 0,
+        boxShadow: '2px 3px 10px rgba(0,0,0,0.25)' }}>
         <img src={coverImage} alt={title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
       </div>
     );
@@ -159,7 +162,7 @@ export default function BooksScreen() {
         {/* Cover + info */}
         <div className="card" style={{ display: 'flex', gap: 16, marginBottom: 12, alignItems: 'center' }}>
           <label style={{ cursor: 'pointer', position: 'relative' }}>
-            <BookCover title={selectedBook.title} color={selectedBook.coverColor} coverImage={selectedBook.coverImage} size={72} />
+            <BookCover title={selectedBook.title} color={selectedBook.coverColor} coverImage={selectedBook.coverImage} size={selectedBook.coverImage ? 150 : 72} />
             <div style={{
               position: 'absolute', bottom: 0, right: 0, background: 'rgba(0,0,0,0.5)',
               borderRadius: '0 0 10px 0', padding: '3px 5px', display: 'flex', alignItems: 'center',
