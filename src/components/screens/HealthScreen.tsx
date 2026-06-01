@@ -128,11 +128,12 @@ export default function HealthScreen() {
     await db.walkEntries.delete(id); loadAll();
   }
 
-  async function saveBedtime() {
+  async function saveBedtime(value: string) {
+    if (!value) return;
     const existing = await db.daySettings.get(date);
-    if (existing) await db.daySettings.update(date, { bedtime });
-    else await db.daySettings.put({ date, energyLevel: 5, greetShown: false, bedtime });
-    setSavedBedtime(bedtime); setBedtime('');
+    if (existing) await db.daySettings.update(date, { bedtime: value });
+    else await db.daySettings.put({ date, energyLevel: 5, greetShown: false, bedtime: value });
+    setSavedBedtime(value);
   }
 
   async function addIncome() {
@@ -331,21 +332,13 @@ export default function HealthScreen() {
         <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '0 0 10px' }}>
           What time did you go to bed?
         </p>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input
-            className="input"
-            type="time"
-            value={bedtime}
-            onChange={e => setBedtime(e.target.value)}
-            style={{ flex: 1 }}
-          />
-          <button className="btn-primary" onClick={saveBedtime} disabled={!bedtime}>
-            Save
-          </button>
-        </div>
-        {savedBedtime && (
-          <p style={{ fontSize: 12, color: 'green', margin: '8px 0 0' }}>✓ Logged: {savedBedtime}</p>
-        )}
+        <input
+          className="input"
+          type="time"
+          value={savedBedtime || bedtime}
+          onChange={e => { setBedtime(e.target.value); saveBedtime(e.target.value); }}
+          style={{ width: '100%' }}
+        />
       </div>
 
       {/* Income */}

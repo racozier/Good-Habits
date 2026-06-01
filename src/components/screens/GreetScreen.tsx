@@ -71,6 +71,13 @@ export default function GreetScreen() {
   const [wakeTime, setWakeTime] = useState('');
 
   useEffect(() => {
+    // Pre-fill wake time if already saved today
+    db.daySettings.get(today()).then(ds => {
+      if (ds?.wakeTime) setWakeTime(ds.wakeTime);
+    });
+  }, []);
+
+  useEffect(() => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(async (pos) => {
       try {
