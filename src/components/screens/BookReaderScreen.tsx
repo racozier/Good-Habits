@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Bookmark, BookOpen } from 'lucide-react';
 import JSZip from 'jszip';
 import { useAppStore } from '../../store/appStore';
 
@@ -11,153 +11,85 @@ function isRoman(s: string): boolean {
   return t.length > 0 && ROMAN_RE.test(t);
 }
 
-function splitByRomanNumerals(html: string): RomanChapter[] {
-  // Use DOMParser so nested tags, whitespace and encoding don't fool us
-  const doc = new DOMParser().parseFromString('<html><body>' + html + '</body></html>', 'text/html');
-
-  // Walk every block element and mark those whose TEXT is solely a Roman numeral
-  let markerIdx = 0;
-  const markers: { numeral: string; attr: string }[] = [];
-  const BLOCK = new Set(['h1','h2','h3','h4','h5','h6','p','div','section','header']);
-
-  for (const el of Array.from(doc.body.querySelectorAll('*'))) {
-    if (!BLOCK.has(el.tagName.toLowerCase())) continue;
-    const text = (el.textContent ?? '').trim();
-    if (!isRoman(text)) continue;
-    const attr = `data-rch="${markerIdx++}"`;
-    el.setAttribute('data-rch', String(markerIdx - 1));
-    markers.push({ numeral: text.toUpperCase(), attr });
-  }
-
-  // Re-serialize: DOMParser normalises the HTML cleanly
-  const marked = doc.body.innerHTML;
-
-  // Find split positions using the data-rch markers
-  const splits: { index: number; numeral: string }[] = [];
-  for (let i = 0; i < markers.length; i++) {
-    const search = `data-rch="${i}"`;
-    const attrPos = marked.indexOf(search);
-    if (attrPos === -1) continue;
-    const elemStart = marked.lastIndexOf('<', attrPos);
-    splits.push({ index: elemStart, numeral: markers[i].numeral });
-  }
-
-  // Sort by position (should already be sorted but just in case)
-  splits.sort((a, b) => a.index - b.index);
-
-  if (splits.length === 0) return [{ numeral: 'I', html: marked }];
-
-  const chapters: RomanChapter[] = [];
-  for (let i = 0; i < splits.length; i++) {
-    const start = splits[i].index;
-    const end = i + 1 < splits.length ? splits[i + 1].index : marked.length;
-    chapters.push({ numeral: splits[i].numeral, html: marked.slice(start, end) });
-  }
-  return chapters;
-}
-
-function extractBodyContent(raw: string): string {
-  // 1. Remove XML declaration, DOCTYPE, and entire <head>
-  let s = raw
-    .replace(/<\?xml[^?]*\?>/gi, '')
-    .replace(/<!DOCTYPE[^>]*>/gi, '')
-    .replace(/<head[\s\S]*?<\/head>/i, '')
-    .replace(/<link[^>]+>/gi, '')
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
-
-  // 2. Try to get body content
-  const bodyMatch = s.match(/<body[^>]*>([\s\S]*?)<\/body>/i)
-    ?? s.match(/<body[^>]*>([\s\S]*)/i);
-  if (bodyMatch) return bodyMatch[1];
-
-  // 3. Strip any remaining html/body wrapper tags and return whatever's left
-  return s.replace(/<\/?(html|body)[^>]*>/gi, '').trim();
-}
-
-function sanitizeHtml(html: string): string {
-  // Strip ALL inline style/color/bgcolor attributes so our CSS controls everything.
-  // This fixes white-text-on-white-background from books with dark themes.
+function sanitize(html: string): string {
   return html
     .replace(/\s+style="[^"]*"/gi, '')
     .replace(/\s+style='[^']*'/gi, '')
     .replace(/\s+bgcolor="[^"]*"/gi, '')
     .replace(/\s+color="[^"]*"/gi, '')
     .replace(/\s+background="[^"]*"/gi, '')
-    .replace(/<font[^>]*>/gi, '')
-    .replace(/<\/font>/gi, '');
+    .replace(/<font[^>]*>/gi, '').replace(/<\/font>/gi, '');
 }
 
-async function parseEpubByRomanNumerals(dataUrl: string): Promise<{ chapters: RomanChapter[]; debug: string }> {
+function extractBody(raw: string): string {
+  const s = raw
+    .replace(/<\?xml[^?]*\?>/gi, '')
+    .replace(/<!DOCTYPE[^>]*>/gi, '')
+    .replace(/<head[\s\S]*?<\/head>/i, '')
+    .replace(/<link[^>]+>/gi, '')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+  const m = s.match(/<body[^>]*>([\s\S]*?)<\/body>/i) ?? s.match(/<body[^>]*>([\s\S]*)/i);
+  return m ? m[1] : s.replace(/<\/?(html|body)[^>]*>/gi, '').trim();
+}
+
+// Detect if a file's HTML starts with a Roman numeral heading
+function detectRomanNumeral(html: string): string | null {
+  const doc = new DOMParser().parseFromString('<body>' + html + '</body>', 'text/html');
+  const blocks = Array.from(doc.body.querySelectorAll('h1,h2,h3,h4,h5,h6,p,div'));
+  for (const el of blocks.slice(0, 15)) {
+    const text = (el.textContent ?? '').trim();
+    if (text.length >= 1 && text.length <= 12 && isRoman(text)) return text.toUpperCase();
+  }
+  return null;
+}
+
+async function parseEpub(dataUrl: string): Promise<{ chapters: RomanChapter[]; debug: string }> {
   const base64 = dataUrl.split(',')[1];
   const binary = atob(base64);
   const buf = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
-
   const zip = await JSZip.loadAsync(buf.buffer);
 
-  // Find OPF
+  // OPF
   const containerFile = zip.file('META-INF/container.xml');
-  if (!containerFile) throw new Error('No META-INF/container.xml found — invalid EPUB');
+  if (!containerFile) throw new Error('Invalid EPUB: missing META-INF/container.xml');
   const containerXml = await containerFile.async('string');
   const opfPath = containerXml.match(/full-path="([^"]+)"/)?.[1] ?? '';
   const opfDir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : '';
   const opfXml = await zip.file(opfPath)!.async('string');
 
-  // Manifest — try both single and double quotes, with and without \b
+  // Manifest
   const manifest: Record<string, string> = {};
-  for (const m of opfXml.matchAll(/<item\s[^>]*\bid="([^"]+)"[^>]*\bhref="([^"]+)"/g)) {
-    manifest[m[1]] = m[2];
-  }
-  // Some EPUBs use single quotes
-  for (const m of opfXml.matchAll(/<item\s[^>]*\bid='([^']+)'[^>]*\bhref='([^']+)'/g)) {
-    manifest[m[1]] = m[2];
-  }
+  for (const m of opfXml.matchAll(/<item\s[^>]*\bid="([^"']+)"[^>]*\bhref="([^"']+)"/g)) manifest[m[1]] = m[2];
+  for (const m of opfXml.matchAll(/<item\s[^>]*\bid='([^"']+)'[^>]*\bhref='([^"']+)'/g)) manifest[m[1]] = m[2];
 
-  // Spine order — try both quote styles
+  // Spine
   let spineIds = [...opfXml.matchAll(/<itemref\s[^>]*\bidref="([^"]+)"/g)].map(m => m[1]);
-  if (spineIds.length === 0) {
-    spineIds = [...opfXml.matchAll(/<itemref\s[^>]*idref="([^"]+)"/g)].map(m => m[1]);
-  }
-  if (spineIds.length === 0) {
-    spineIds = [...opfXml.matchAll(/idref=['"]([^'"]+)['"]/g)].map(m => m[1]);
-  }
+  if (!spineIds.length) spineIds = [...opfXml.matchAll(/idref=['"]([^'"]+)['"]/g)].map(m => m[1]);
 
-  // Build ordered file paths from spine
-  let orderedPaths: string[] = [];
-  for (const id of spineIds) {
-    const href = manifest[id];
-    if (href) orderedPaths.push(opfDir + href);
-  }
+  let orderedPaths: string[] = spineIds.map(id => manifest[id]).filter(Boolean).map(h => opfDir + h);
 
-  // Fallback: if spine gave nothing, scan zip for all HTML/XHTML files
-  if (orderedPaths.length === 0) {
-    zip.forEach((path) => {
-      if (path.match(/\.(xhtml|html|htm)$/i) && !path.match(/toc|nav\./i)) {
-        orderedPaths.push(path);
-      }
-    });
+  // Fallback: scan zip
+  if (!orderedPaths.length) {
+    zip.forEach(path => { if (path.match(/\.(xhtml|html|htm)$/i) && !path.match(/toc|nav\./i)) orderedPaths.push(path); });
     orderedPaths.sort();
   }
 
-  let combined = '';
-  let filesProcessed = 0;
-
+  // Load each file
+  const files: { path: string; html: string }[] = [];
   for (const fullPath of orderedPaths) {
-    const file = zip.file(fullPath)
-      ?? zip.file(fullPath.replace(/^\//, ''));
+    const file = zip.file(fullPath) ?? zip.file(fullPath.replace(/^\//, ''));
     if (!file) continue;
-
     let raw = await file.async('string');
-    filesProcessed++;
 
     // Inline images
     const fileDir = fullPath.includes('/') ? fullPath.slice(0, fullPath.lastIndexOf('/') + 1) : opfDir;
     for (const m of [...raw.matchAll(/src="([^"]+\.(jpe?g|png|gif|svg|webp))"/gi)]) {
       const rel = m[1];
       if (rel.startsWith('data:') || rel.startsWith('http')) continue;
-      for (const candidate of [fileDir + rel, opfDir + rel, rel]) {
-        const imgFile = zip.file(candidate);
+      for (const c of [fileDir + rel, opfDir + rel, rel]) {
+        const imgFile = zip.file(c);
         if (imgFile) {
           const b64 = await imgFile.async('base64');
           const ext = rel.split('.').pop()!.toLowerCase();
@@ -167,19 +99,33 @@ async function parseEpubByRomanNumerals(dataUrl: string): Promise<{ chapters: Ro
         }
       }
     }
-
-    combined += sanitizeHtml(extractBodyContent(raw)) + '\n';
+    files.push({ path: fullPath, html: sanitize(extractBody(raw)) });
   }
 
-  const debug = `Files: ${filesProcessed}, Combined length: ${combined.length} chars`;
+  if (!files.length) throw new Error(`No content files found. Paths tried: ${orderedPaths.length}`);
 
-  if (combined.trim().length === 0) {
-    throw new Error(`Book text could not be extracted. ${debug}`);
+  // Build chapters: each file that starts with a Roman numeral = new chapter
+  // Files without Roman numerals get appended to the previous chapter
+  const chapters: RomanChapter[] = [];
+  for (const { html } of files) {
+    if (!html.trim()) continue;
+    const numeral = detectRomanNumeral(html);
+    if (numeral) {
+      chapters.push({ numeral, html });
+    } else if (chapters.length > 0) {
+      chapters[chapters.length - 1].html += '\n' + html;
+    }
+    // Pre-chapter preamble (cover, title page, etc.) is skipped
   }
 
-  // Split using DOM-based Roman numeral detection
-  const chapters = splitByRomanNumerals(combined);
-  return { chapters, debug: debug + ` | ${chapters.length} Roman-numeral chapters found` };
+  // If no Roman numerals anywhere, just split by file
+  if (!chapters.length) {
+    files.forEach((f, i) => {
+      if (f.html.trim()) chapters.push({ numeral: String(i + 1), html: f.html });
+    });
+  }
+
+  return { chapters, debug: `${files.length} files, ${chapters.length} chapters` };
 }
 
 const READER_CSS = `
@@ -192,33 +138,71 @@ const READER_CSS = `
   a { color: #888; text-decoration: none; }
 `;
 
+function bookmarkKey(title: string) { return `epub-bookmark-${title}`; }
+
 export default function BookReaderScreen() {
   const { epubReader, closeEpub } = useAppStore();
   const [chapters, setChapters] = useState<RomanChapter[]>([]);
+  const [current, setCurrent] = useState(epubReader?.startChapter ?? 0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [debugInfo, setDebugInfo] = useState('');
+  const [debug, setDebug] = useState('');
+  const [bookmarked, setBookmarked] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const chapterIndex = epubReader?.startChapter ?? 0;
-  const ch = chapters[chapterIndex];
+  // From Rewards: locked to the unlocked chapter index
+  // From Books: free navigation
+  const isRewards = epubReader?.returnScreen === 'rewards';
 
   useEffect(() => {
     if (!epubReader?.data) return;
-    setLoading(true);
-    setError('');
-    parseEpubByRomanNumerals(epubReader.data)
-      .then(({ chapters: chs, debug }) => {
+    setLoading(true); setError('');
+
+    // Load bookmark for books-tab reading
+    if (!isRewards && epubReader.title) {
+      const saved = localStorage.getItem(bookmarkKey(epubReader.title));
+      if (saved !== null) setCurrent(parseInt(saved));
+    }
+
+    parseEpub(epubReader.data)
+      .then(({ chapters: chs, debug: d }) => {
         setChapters(chs);
-        setDebugInfo(debug);
+        setDebug(d);
+        // For rewards, use the passed chapter index directly
+        if (isRewards) setCurrent(epubReader.startChapter ?? 0);
         setLoading(false);
       })
       .catch(e => { setError(e.message); setLoading(false); });
   }, [epubReader?.data]);
 
-  useEffect(() => { scrollRef.current?.scrollTo(0, 0); }, [chapterIndex]);
+  useEffect(() => { scrollRef.current?.scrollTo(0, 0); }, [current]);
+
+  const go = useCallback((dir: 1 | -1) => {
+    setCurrent(c => {
+      const next = Math.max(0, Math.min(chapters.length - 1, c + dir));
+      // Auto-save position for books-tab reading
+      if (!isRewards && epubReader?.title) localStorage.setItem(bookmarkKey(epubReader.title), String(next));
+      return next;
+    });
+  }, [chapters.length, isRewards, epubReader?.title]);
+
+  function toggleBookmark() {
+    if (!epubReader?.title) return;
+    const key = bookmarkKey(epubReader.title);
+    if (bookmarked) { localStorage.removeItem(key); setBookmarked(false); }
+    else { localStorage.setItem(key, String(current)); setBookmarked(true); }
+  }
+
+  useEffect(() => {
+    if (!epubReader?.title) return;
+    setBookmarked(localStorage.getItem(bookmarkKey(epubReader.title)) === String(current));
+  }, [current, epubReader?.title]);
 
   if (!epubReader) return null;
+
+  const ch = chapters[current];
+  const canPrev = current > 0;
+  const canNext = current < chapters.length - 1;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', background: '#faf8f4' }}>
@@ -226,49 +210,77 @@ export default function BookReaderScreen() {
 
       {/* Header */}
       <div style={{
-        position: 'sticky', top: 0, zIndex: 10,
-        display: 'flex', alignItems: 'center', gap: 12,
-        padding: '12px 16px', paddingTop: 'max(env(safe-area-inset-top), 12px)',
+        position: 'sticky', top: 0, zIndex: 10, display: 'flex', alignItems: 'center', gap: 10,
+        padding: '10px 16px', paddingTop: 'max(env(safe-area-inset-top), 10px)',
         background: '#faf8f4', borderBottom: '1px solid #e8e0d0',
       }}>
         <button onClick={closeEpub} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
           <ArrowLeft size={22} color="#444" />
         </button>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 700, fontSize: 15, color: '#222' }}>{epubReader.title}</div>
-          {ch && <div style={{ fontSize: 12, color: '#999', marginTop: 1 }}>Chapter {ch.numeral}</div>}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: '#222', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {epubReader.title}
+          </div>
+          {ch && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>Chapter {ch.numeral}{!isRewards && chapters.length > 1 ? ` · ${current + 1} / ${chapters.length}` : ''}</div>}
         </div>
+        {!isRewards && (
+          <button onClick={toggleBookmark} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+            <Bookmark size={20} color={bookmarked ? 'var(--color-primary)' : '#ccc'} fill={bookmarked ? 'var(--color-primary)' : 'none'} />
+          </button>
+        )}
+        {!isRewards && chapters.length > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <BookOpen size={14} color="#aaa" />
+            <span style={{ fontSize: 11, color: '#aaa' }}>{chapters.length}</span>
+          </div>
+        )}
       </div>
 
       {/* Content */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '28px 22px 60px' } as any}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '28px 22px 100px' } as any}>
         {loading && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: '30vh', color: '#aaa', fontSize: 15 }}>
             Opening book…
           </div>
         )}
         {error && (
-          <div style={{ padding: 24, color: '#c44', fontSize: 13, lineHeight: 1.7, background: '#fff5f5', borderRadius: 12, margin: '20px 0' }}>
+          <div style={{ padding: 20, color: '#c44', fontSize: 13, lineHeight: 1.7, background: '#fff5f5', borderRadius: 12 }}>
             <strong>Error:</strong> {error}
           </div>
         )}
-        {!loading && !error && ch && ch.html.trim().length === 0 && (
-          <div style={{ padding: 24, color: '#888', fontSize: 13, lineHeight: 1.7, background: '#f5f5f5', borderRadius: 12, margin: '20px 0' }}>
-            Chapter parsed but appears empty. Debug: {debugInfo}
+        {!loading && !error && !ch && (
+          <div style={{ padding: 20, color: '#888', fontSize: 13, background: '#f5f5f5', borderRadius: 12 }}>
+            Chapter not found. Debug: {debug}
           </div>
         )}
-        {ch && ch.html.trim().length > 0 && !loading && (
+        {ch && !loading && (
           <div
+            key={current}
             style={{ fontSize: 18, lineHeight: 1.85, color: '#1a1a1a', maxWidth: 660, margin: '0 auto', fontFamily: 'Georgia, serif' }}
             dangerouslySetInnerHTML={{ __html: ch.html }}
           />
         )}
-        {!loading && !error && chapters.length > 0 && !ch && (
-          <div style={{ padding: 24, textAlign: 'center', color: '#aaa', fontSize: 14 }}>
-            Chapter {chapterIndex + 1} not found (book has {chapters.length} chapters). Debug: {debugInfo}
-          </div>
-        )}
       </div>
+
+      {/* Bottom nav — only for Books tab */}
+      {!isRewards && chapters.length > 1 && (
+        <div style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '10px 20px', paddingBottom: 'max(env(safe-area-inset-bottom), 10px)',
+          background: '#faf8f4', borderTop: '1px solid #e8e0d0',
+        }}>
+          <button onClick={() => go(-1)} disabled={!canPrev} style={{
+            background: 'none', border: '1.5px solid #ddd', borderRadius: 12,
+            padding: '10px 20px', cursor: canPrev ? 'pointer' : 'default', opacity: canPrev ? 1 : 0.3,
+          }}><ChevronLeft size={20} color="#444" /></button>
+          <span style={{ fontSize: 12, color: '#bbb' }}>{current + 1} / {chapters.length}</span>
+          <button onClick={() => go(1)} disabled={!canNext} style={{
+            background: 'none', border: '1.5px solid #ddd', borderRadius: 12,
+            padding: '10px 20px', cursor: canNext ? 'pointer' : 'default', opacity: canNext ? 1 : 0.3,
+          }}><ChevronRight size={20} color="#444" /></button>
+        </div>
+      )}
     </div>
   );
 }

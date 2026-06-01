@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react';
 import { useAppStore } from '../../store/appStore';
 import { db } from '../../db';
 import type { Theme } from '../../types';
@@ -19,17 +20,83 @@ const THEMES: { id: Theme; name: string; colors: string[]; dark?: boolean }[] = 
 
 export default function SettingsScreen() {
   const { theme, setTheme } = useAppStore();
+  const importRef = useRef<HTMLInputElement>(null);
+  const [importStatus, setImportStatus] = useState('');
 
   async function exportData() {
-    const [tasks, diary, sleep, books] = await Promise.all([
-      db.tasks.toArray(), db.diaryEntries.toArray(),
-      db.sleepEntries.toArray(), db.books.toArray()
+    const [tasks, diary, sleep, books, waterEntries, weightEntries,
+           walkEntries, cleaningEntries, workoutEntries, workoutGoal,
+           rewards, favoriteBook, daySettings, appSettings, bookNotes,
+           readingEntries] = await Promise.all([
+      db.tasks.toArray(), db.diaryEntries.toArray(), db.sleepEntries.toArray(),
+      db.books.toArray(), db.waterEntries.toArray(), db.weightEntries.toArray(),
+      db.walkEntries.toArray(), db.cleaningEntries.toArray(),
+      db.workoutEntries.toArray(), db.workoutGoal.toArray(),
+      db.rewards.toArray(), db.favoriteBook.toArray(),
+      db.daySettings.toArray(), db.appSettings.toArray(),
+      db.bookNotes.toArray(), db.readingEntries.toArray(),
     ]);
-    const blob = new Blob([JSON.stringify({ tasks, diary, sleep, books }, null, 2)], { type: 'application/json' });
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      tasks, diary, sleep, books, waterEntries, weightEntries,
+      walkEntries, cleaningEntries, workoutEntries, workoutGoal,
+      rewards, favoriteBook, daySettings, appSettings, bookNotes, readingEntries,
+      localStorage: Object.fromEntries(
+        Array.from({ length: localStorage.length }, (_, i) => {
+          const k = localStorage.key(i)!;
+          return [k, localStorage.getItem(k)];
+        })
+      ),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `bloomia-export-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `bloomia-backup-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
+  }
+
+  async function importData(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportStatus('Importing…');
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!data.version) throw new Error('Not a valid Bloomia backup file');
+
+      // Restore all tables
+      const ops: Promise<any>[] = [];
+      if (data.tasks?.length)          ops.push(db.tasks.bulkPut(data.tasks));
+      if (data.diary?.length)          ops.push(db.diaryEntries.bulkPut(data.diary));
+      if (data.sleep?.length)          ops.push(db.sleepEntries.bulkPut(data.sleep));
+      if (data.books?.length)          ops.push(db.books.bulkPut(data.books));
+      if (data.waterEntries?.length)   ops.push(db.waterEntries.bulkPut(data.waterEntries));
+      if (data.weightEntries?.length)  ops.push(db.weightEntries.bulkPut(data.weightEntries));
+      if (data.walkEntries?.length)    ops.push(db.walkEntries.bulkPut(data.walkEntries));
+      if (data.cleaningEntries?.length) ops.push(db.cleaningEntries.bulkPut(data.cleaningEntries));
+      if (data.workoutEntries?.length) ops.push(db.workoutEntries.bulkPut(data.workoutEntries));
+      if (data.workoutGoal?.length)    ops.push(db.workoutGoal.bulkPut(data.workoutGoal));
+      if (data.rewards?.length)        ops.push(db.rewards.bulkPut(data.rewards));
+      if (data.favoriteBook?.length)   ops.push(db.favoriteBook.bulkPut(data.favoriteBook));
+      if (data.daySettings?.length)    ops.push(db.daySettings.bulkPut(data.daySettings));
+      if (data.appSettings?.length)    ops.push(db.appSettings.bulkPut(data.appSettings));
+      if (data.bookNotes?.length)      ops.push(db.bookNotes.bulkPut(data.bookNotes));
+      if (data.readingEntries?.length) ops.push(db.readingEntries.bulkPut(data.readingEntries));
+
+      // Restore localStorage (streaks, reward claims, bookmarks, theme)
+      if (data.localStorage) {
+        for (const [k, v] of Object.entries(data.localStorage)) {
+          if (typeof v === 'string') localStorage.setItem(k, v);
+        }
+      }
+
+      await Promise.all(ops);
+      setImportStatus('✓ Import successful! Reload the app to see your data.');
+    } catch (err: any) {
+      setImportStatus('✗ Import failed: ' + err.message);
+    }
+    e.target.value = '';
   }
 
   return (
@@ -68,10 +135,23 @@ export default function SettingsScreen() {
       </div>
 
       <div className="card" style={{ marginBottom: 12 }}>
-        <p style={{ fontSize: 15, fontWeight: 700, margin: '0 0 10px' }}>Data</p>
-        <button className="btn-ghost" onClick={exportData} style={{ width: '100%' }}>
-          📥 Export all data as JSON
+        <p style={{ fontSize: 15, fontWeight: 700, margin: '0 0 10px' }}>Backup & Restore</p>
+        <button className="btn-primary" onClick={exportData} style={{ width: '100%', marginBottom: 10 }}>
+          📤 Export backup
         </button>
+        <label style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          cursor: 'pointer', padding: '13px', border: '1.5px dashed var(--color-border)',
+          borderRadius: 12, fontSize: 14, fontWeight: 600, color: 'var(--color-primary)',
+        }}>
+          📥 Import backup
+          <input ref={importRef} type="file" accept=".json" style={{ display: 'none' }} onChange={importData} />
+        </label>
+        {importStatus && (
+          <p style={{ fontSize: 13, marginTop: 10, color: importStatus.startsWith('✓') ? 'green' : importStatus.startsWith('✗') ? '#c44' : 'var(--color-text-muted)', textAlign: 'center' }}>
+            {importStatus}
+          </p>
+        )}
       </div>
 
       <div className="card" style={{ textAlign: 'center' }}>
