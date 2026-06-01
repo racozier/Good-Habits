@@ -30,6 +30,19 @@ function extractBodyContent(raw: string): string {
   return s.replace(/<\/?(html|body)[^>]*>/gi, '').trim();
 }
 
+function sanitizeHtml(html: string): string {
+  // Strip ALL inline style/color/bgcolor attributes so our CSS controls everything.
+  // This fixes white-text-on-white-background from books with dark themes.
+  return html
+    .replace(/\s+style="[^"]*"/gi, '')
+    .replace(/\s+style='[^']*'/gi, '')
+    .replace(/\s+bgcolor="[^"]*"/gi, '')
+    .replace(/\s+color="[^"]*"/gi, '')
+    .replace(/\s+background="[^"]*"/gi, '')
+    .replace(/<font[^>]*>/gi, '')
+    .replace(/<\/font>/gi, '');
+}
+
 async function parseEpubByRomanNumerals(dataUrl: string): Promise<{ chapters: RomanChapter[]; debug: string }> {
   const base64 = dataUrl.split(',')[1];
   const binary = atob(base64);
@@ -90,7 +103,7 @@ async function parseEpubByRomanNumerals(dataUrl: string): Promise<{ chapters: Ro
       }
     }
 
-    combined += extractBodyContent(raw) + '\n';
+    combined += sanitizeHtml(extractBodyContent(raw)) + '\n';
   }
 
   const debug = `Files: ${filesProcessed}, Combined length: ${combined.length} chars`;
@@ -131,26 +144,13 @@ async function parseEpubByRomanNumerals(dataUrl: string): Promise<{ chapters: Ro
 }
 
 const READER_CSS = `
-  * { box-sizing: border-box; max-width: 100%; }
-  p, div, span, li, td, blockquote, section, article, aside {
-    color: #1a1a1a !important;
-    background: transparent !important;
-  }
-  h1,h2,h3,h4,h5,h6 {
-    color: #111 !important;
-    background: transparent !important;
-    margin: 1.4em 0 0.6em;
-    line-height: 1.3;
-  }
+  * { box-sizing: border-box; max-width: 100%; color: #1a1a1a; background: transparent; }
   p { margin: 0 0 1em; }
+  h1,h2,h3,h4,h5,h6 { margin: 1.4em 0 0.6em; line-height: 1.3; text-align: center; }
   em, i { font-style: italic; }
   strong, b { font-weight: 700; }
   img { max-width: 100%; height: auto; display: block; margin: 1.5em auto; }
-  a { color: #888 !important; text-decoration: none; }
-  [style*="color"] { color: #1a1a1a !important; }
-  [style*="background"] { background: transparent !important; }
-  [style*="display:none"], [style*="display: none"] { display: block !important; }
-  [style*="visibility:hidden"], [style*="visibility: hidden"] { visibility: visible !important; }
+  a { color: #888; text-decoration: none; }
 `;
 
 export default function BookReaderScreen() {
