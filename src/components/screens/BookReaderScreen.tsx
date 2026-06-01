@@ -11,6 +11,51 @@ function isRoman(s: string): boolean {
   return t.length > 0 && ROMAN_RE.test(t);
 }
 
+function splitByRomanNumerals(html: string): RomanChapter[] {
+  // Use DOMParser so nested tags, whitespace and encoding don't fool us
+  const doc = new DOMParser().parseFromString('<html><body>' + html + '</body></html>', 'text/html');
+
+  // Walk every block element and mark those whose TEXT is solely a Roman numeral
+  let markerIdx = 0;
+  const markers: { numeral: string; attr: string }[] = [];
+  const BLOCK = new Set(['h1','h2','h3','h4','h5','h6','p','div','section','header']);
+
+  for (const el of Array.from(doc.body.querySelectorAll('*'))) {
+    if (!BLOCK.has(el.tagName.toLowerCase())) continue;
+    const text = (el.textContent ?? '').trim();
+    if (!isRoman(text)) continue;
+    const attr = `data-rch="${markerIdx++}"`;
+    el.setAttribute('data-rch', String(markerIdx - 1));
+    markers.push({ numeral: text.toUpperCase(), attr });
+  }
+
+  // Re-serialize: DOMParser normalises the HTML cleanly
+  const marked = doc.body.innerHTML;
+
+  // Find split positions using the data-rch markers
+  const splits: { index: number; numeral: string }[] = [];
+  for (let i = 0; i < markers.length; i++) {
+    const search = `data-rch="${i}"`;
+    const attrPos = marked.indexOf(search);
+    if (attrPos === -1) continue;
+    const elemStart = marked.lastIndexOf('<', attrPos);
+    splits.push({ index: elemStart, numeral: markers[i].numeral });
+  }
+
+  // Sort by position (should already be sorted but just in case)
+  splits.sort((a, b) => a.index - b.index);
+
+  if (splits.length === 0) return [{ numeral: 'I', html: marked }];
+
+  const chapters: RomanChapter[] = [];
+  for (let i = 0; i < splits.length; i++) {
+    const start = splits[i].index;
+    const end = i + 1 < splits.length ? splits[i + 1].index : marked.length;
+    chapters.push({ numeral: splits[i].numeral, html: marked.slice(start, end) });
+  }
+  return chapters;
+}
+
 function extractBodyContent(raw: string): string {
   // 1. Remove XML declaration, DOCTYPE, and entire <head>
   let s = raw
@@ -132,34 +177,8 @@ async function parseEpubByRomanNumerals(dataUrl: string): Promise<{ chapters: Ro
     throw new Error(`Book text could not be extracted. ${debug}`);
   }
 
-  // Split by Roman numeral headings.
-  // Strategy: find any tag that contains ONLY a Roman numeral as its visible text,
-  // with optional nested inline tags (span, strong, em, b, i).
-  const splits: { index: number; numeral: string }[] = [];
-
-  // Pattern: <TAG ...> (optional inline tags) ROMAN_NUMERAL (optional closing inline tags) </TAG>
-  // TAG = h1-h6, p, div
-  const tagRe = /<(h[1-6]|p|div)[^>]*>((?:<[^/][^>]*>)*)\s*([A-Za-z]{1,10})\s*((?:<\/[^>]+>)*)<\/\1>/gi;
-
-  for (const m of [...combined.matchAll(tagRe)]) {
-    const candidate = m[3].trim();
-    if (isRoman(candidate)) {
-      splits.push({ index: m.index!, numeral: candidate.toUpperCase() });
-    }
-  }
-
-  if (splits.length === 0) {
-    // No Roman numerals found — return whole book as one chapter
-    return { chapters: [{ numeral: 'I', html: combined }], debug: debug + ' | No Roman numerals detected, showing full text' };
-  }
-
-  const chapters: RomanChapter[] = [];
-  for (let i = 0; i < splits.length; i++) {
-    const start = splits[i].index;
-    const end = i + 1 < splits.length ? splits[i + 1].index : combined.length;
-    chapters.push({ numeral: splits[i].numeral, html: combined.slice(start, end) });
-  }
-
+  // Split using DOM-based Roman numeral detection
+  const chapters = splitByRomanNumerals(combined);
   return { chapters, debug: debug + ` | ${chapters.length} Roman-numeral chapters found` };
 }
 
