@@ -16,7 +16,7 @@ export function calcTaskProgress(tasks: Task[]): number {
     const addedMs = new Date(sy, sm - 1, sd).getTime();
     const todayMs = new Date(ty, tm - 1, td).getTime();
     const daysAvoided = Math.max(0, Math.floor((todayMs - addedMs) / 86400000));
-    const cap = Math.min((daysAvoided + 1) * 20, 100);
+    const cap = (daysAvoided + 1) * 20;
     scaryDominance = Math.max(scaryDominance, cap);
   }
 
@@ -34,7 +34,7 @@ export function calcTaskProgress(tasks: Task[]): number {
   const scaryPct = scaryTotal === 0 ? 0 : scaryDone / scaryTotal;
 
   const scarySplit = scaryDominance / 100;
-  return Math.round((scaryPct * scarySplit + regularPct * (1 - scarySplit)) * 100);
+  return Math.max(0, Math.min(100, Math.round((scaryPct * scarySplit + regularPct * (1 - scarySplit)) * 100)));
 }
 
 // Health bar = water (1/3) + weight logged (1/3) + cleaning done (1/3)

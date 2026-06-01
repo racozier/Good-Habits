@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Trash2, Upload, Lock, Unlock } from 'lucide-react';
 import { db } from '../../db';
 import { uid } from '../../utils/dateUtils';
@@ -17,8 +17,32 @@ export default function RewardsScreen() {
   const [newText, setNewText] = useState('');
   const [newDuration, setNewDuration] = useState('');
   const [addingTier, setAddingTier] = useState<1 | 2 | 3 | 4>(1);
+  const [pendingEpub, setPendingEpub] = useState<{ data: string; defaultName: string } | null>(null);
+  const [epubTitle, setEpubTitle] = useState('');
 
-  useEffect(() => { loadRewards(); loadFavoriteBook(); }, []);
+  useEffect(() => { loadRewards(); loadFavoriteBook(); syncUnlockedChapters(); }, []);
+
+  function getMaxUnlockedTier(): number {
+    let maxTier = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith('reward-claimed-')) {
+        const tiers: number[] = JSON.parse(localStorage.getItem(k) || '[]');
+        if (tiers.length > 0) maxTier = Math.max(maxTier, ...tiers);
+      }
+    }
+    return maxTier;
+  }
+
+  async function syncUnlockedChapters() {
+    const fb = await db.favoriteBook.get('favorite');
+    if (!fb) return;
+    const maxTier = getMaxUnlockedTier();
+    if (maxTier !== fb.unlockedChapters) {
+      await db.favoriteBook.update('favorite', { unlockedChapters: maxTier });
+      loadFavoriteBook();
+    }
+  }
 
   async function loadRewards() {
     const r = await db.rewards.toArray();
@@ -52,17 +76,38 @@ export default function RewardsScreen() {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = async (ev) => {
+    reader.onload = (ev) => {
       const data = ev.target?.result as string;
-      const title = file.name.replace('.epub', '');
-      const fb: FavoriteBook = {
-        id: 'favorite', title, epubData: data,
-        totalChapters: 20, unlockedChapters: 0
-      };
-      await db.favoriteBook.put(fb);
-      loadFavoriteBook();
+      const defaultName = file.name.replace(/\.epub$/i, '');
+      setPendingEpub({ data, defaultName });
+      setEpubTitle(defaultName);
     };
     reader.readAsDataURL(file);
+  }
+
+  async function confirmEpubUpload() {
+    if (!pendingEpub) return;
+    const title = epubTitle.trim() || pendingEpub.defaultName;
+    // Count tiers unlocked based on how many reward tiers have been claimed today
+    const claimedKey = `reward-claimed-${new Date().toISOString().split('T')[0]}`;
+    const claimed: number[] = JSON.parse(localStorage.getItem(claimedKey) || '[]');
+    // Also check any day's max claimed tier across all saved days
+    let maxTier = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith('reward-claimed-')) {
+        const tiers: number[] = JSON.parse(localStorage.getItem(k) || '[]');
+        if (tiers.length > 0) maxTier = Math.max(maxTier, ...tiers);
+      }
+    }
+    const unlockedChapters = maxTier;
+    const fb: FavoriteBook = {
+      id: 'favorite', title, epubData: pendingEpub.data,
+      totalChapters: 20, unlockedChapters
+    };
+    await db.favoriteBook.put(fb);
+    setPendingEpub(null);
+    loadFavoriteBook();
   }
 
   const energyLabel = energyLevel <= 4 ? 'Low' : energyLevel <= 7 ? 'Medium' : 'High';
@@ -136,9 +181,35 @@ export default function RewardsScreen() {
           <span style={{ fontSize: 20 }}>📚</span>
           <span style={{ fontWeight: 700, fontSize: 16 }}>Favorite Locked Book</span>
         </div>
+        {/* Rename/upload modal */}
+        <AnimatePresence>
+          {pendingEpub && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              style={{
+                position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 200,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 20px'
+              }}>
+              <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }}
+                style={{ background: 'var(--color-surface)', borderRadius: 20, padding: '24px 20px', width: '100%', maxWidth: 380 }}>
+                <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: 'var(--color-text)' }}>Name your book</h3>
+                <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--color-text-muted)' }}>Give your EPUB a clean name</p>
+                <input className="input" value={epubTitle} onChange={e => setEpubTitle(e.target.value)}
+                  placeholder="Book title..." style={{ marginBottom: 14, width: '100%' }} />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn-primary" onClick={confirmEpubUpload} style={{ flex: 1 }}>Save</button>
+                  <button className="btn-ghost" onClick={() => setPendingEpub(null)}>Cancel</button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {favoriteBook ? (
           <div>
-            <p style={{ fontWeight: 600, fontSize: 15, margin: '0 0 8px' }}>{favoriteBook.title}</p>
+            <p style={{ fontWeight: 600, fontSize: 15, margin: '0 0 4px' }}>{favoriteBook.title}</p>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: '0 0 12px' }}>
+              1 chapter unlocked per reward tier reached (max 4)
+            </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {Array.from({ length: favoriteBook.totalChapters }).map((_, i) => {
                 const unlocked = i < favoriteBook.unlockedChapters;
@@ -158,11 +229,18 @@ export default function RewardsScreen() {
             <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 8 }}>
               {favoriteBook.unlockedChapters} / {favoriteBook.totalChapters} chapters unlocked
             </p>
+            <label style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+              marginTop: 10, fontSize: 13, color: 'var(--color-primary)', fontWeight: 600
+            }}>
+              <Upload size={14} /> Replace EPUB
+              <input type="file" accept=".epub" style={{ display: 'none' }} onChange={handleFavBookUpload} />
+            </label>
           </div>
         ) : (
           <div>
             <p style={{ fontSize: 14, color: 'var(--color-text-muted)', marginBottom: 12 }}>
-              Upload your favorite EPUB book. Chapters unlock as rewards — 1 per reward tier crossed, 3 for completing all tasks.
+              Upload your favorite EPUB book. Chapters unlock as you complete reward tiers — 1 chapter per tier.
             </p>
             <label style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Gift, X } from 'lucide-react';
 import { db } from '../../db';
+import { useAppStore } from '../../store/appStore';
 import type { Reward } from '../../types';
 
 interface Props {
@@ -39,6 +40,7 @@ function ConfettiPiece({ color, left, delay, duration }: { color: string; left: 
 }
 
 export default function RewardPopup({ open, tier, energyLevel, onClose }: Props) {
+  const { navigate } = useAppStore();
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [chosen, setChosen] = useState<Reward | null>(null);
 
@@ -138,8 +140,8 @@ export default function RewardPopup({ open, tier, energyLevel, onClose }: Props)
                     );
                   })}
                 </div>
-                <button onClick={onClose} className="btn-ghost" style={{ width: '100%', marginTop: 14 }}>
-                  Claim later
+                <button onClick={() => { onClose(); navigate('rewards'); }} className="btn-ghost" style={{ width: '100%', marginTop: 14 }}>
+                  Browse rewards
                 </button>
               </>
             ) : (
