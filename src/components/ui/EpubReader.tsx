@@ -12,6 +12,17 @@ interface Props {
 
 interface Chapter { title: string; html: string; }
 
+function extractBody(raw: string): string {
+  // Remove head section entirely
+  const noHead = raw.replace(/<head[\s\S]*?<\/head>/i, '');
+  // Try to get body content
+  const bodyMatch = noHead.match(/<body[^>]*>([\s\S]*?)<\/body>\s*<\/html>/i)
+    ?? noHead.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  if (bodyMatch) return bodyMatch[1];
+  // No body tag — strip html/xml wrappers and return whatever is left
+  return noHead.replace(/<\/?(?:html|xml)[^>]*>/gi, '').trim();
+}
+
 async function parseEpub(dataUrl: string): Promise<Chapter[]> {
   const base64 = dataUrl.split(',')[1];
   const binary = atob(base64);
@@ -20,89 +31,122 @@ async function parseEpub(dataUrl: string): Promise<Chapter[]> {
 
   const zip = await JSZip.loadAsync(buf.buffer);
 
-  // Find OPF
-  const containerXml = await zip.file('META-INF/container.xml')!.async('string');
-  const opfPath = containerXml.match(/full-path="([^"]+)"/)?.[1];
-  if (!opfPath) throw new Error('No OPF found');
+  // --- Try proper OPF spine approach ---
+  let orderedPaths: string[] = [];
+  let opfDir = '';
 
-  const opfDir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : '';
-  const opfXml = await zip.file(opfPath)!.async('string');
+  try {
+    const containerFile = zip.file('META-INF/container.xml');
+    if (containerFile) {
+      const containerXml = await containerFile.async('string');
+      const opfPath = containerXml.match(/full-path="([^"]+)"/)?.[1];
+      if (opfPath) {
+        opfDir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : '';
+        const opfXml = await zip.file(opfPath)!.async('string');
 
-  // Manifest: id → href
-  const manifest: Record<string, string> = {};
-  for (const m of opfXml.matchAll(/<item\s[^>]*\bid="([^"]+)"[^>]*\bhref="([^"]+)"/g)) {
-    manifest[m[1]] = m[2];
-  }
+        // Build manifest
+        const manifest: Record<string, string> = {};
+        for (const m of opfXml.matchAll(/<item\s[^>]*\bid="([^"]+)"[^>]*\bhref="([^"]+)"/g)) {
+          manifest[m[1]] = m[2];
+        }
 
-  // Spine order
-  const spineIds = [...opfXml.matchAll(/<itemref\s[^>]*\bidref="([^"]+)"/g)].map(m => m[1]);
+        // Spine order
+        const spineIds = [...opfXml.matchAll(/<itemref\s[^>]*\bidref="([^"]+)"/g)].map(m => m[1]);
 
-  // NCX titles
-  const titleMap: Record<string, string> = {};
-  const ncxId = Object.keys(manifest).find(id => manifest[id].match(/\.ncx$/i));
-  if (ncxId) {
-    const ncxPath = opfDir + manifest[ncxId];
-    const ncxXml = await zip.file(ncxPath)?.async('string') ?? '';
-    for (const m of ncxXml.matchAll(/<navPoint[\s\S]*?<text>([^<]+)<\/text>[\s\S]*?<content[^>]+src="([^"#]+)/g)) {
-      titleMap[m[2].split('/').pop()!] = m[1].trim();
+        for (const id of spineIds) {
+          const href = manifest[id];
+          if (href && href.match(/\.(xhtml|html|htm)$/i)) {
+            orderedPaths.push(opfDir + href);
+          }
+        }
+      }
     }
+  } catch { /* fall through to scan */ }
+
+  // --- Fallback: scan zip for all HTML/XHTML files ---
+  if (orderedPaths.length === 0) {
+    zip.forEach((path) => {
+      if (path.match(/\.(xhtml|html|htm)$/i)) orderedPaths.push(path);
+    });
+    orderedPaths.sort();
   }
+
+  // Filter out obvious nav/toc files
+  const contentPaths = orderedPaths.filter(p => !p.match(/\/(toc|nav|cover|ncx)\./i));
+
+  // Build NCX title map
+  const titleMap: Record<string, string> = {};
+  try {
+    let ncxFile: JSZip.JSZipObject | null = null;
+    zip.forEach((p, f) => { if (p.match(/\.ncx$/i)) ncxFile = f; });
+    if (ncxFile) {
+      const ncxXml = await (ncxFile as JSZip.JSZipObject).async('string');
+      for (const m of ncxXml.matchAll(/<navPoint[\s\S]*?<text>([^<]+)<\/text>[\s\S]*?<content[^>]+src="([^"#]+)/g)) {
+        titleMap[m[2].split('/').pop()!] = m[1].trim();
+      }
+    }
+  } catch { /* titles optional */ }
 
   const chapters: Chapter[] = [];
 
-  for (let i = 0; i < spineIds.length; i++) {
-    const href = manifest[spineIds[i]];
-    if (!href) continue;
-
-    const fullPath = opfDir + href;
-    const file = zip.file(fullPath) ?? zip.file(href);
+  for (let i = 0; i < contentPaths.length; i++) {
+    const fullPath = contentPaths[i];
+    const file = zip.file(fullPath);
     if (!file) continue;
 
     let raw = await file.async('string');
-    const fileDir = fullPath.includes('/') ? fullPath.slice(0, fullPath.lastIndexOf('/') + 1) : opfDir;
+    const fileDir = fullPath.includes('/') ? fullPath.slice(0, fullPath.lastIndexOf('/') + 1) : '';
 
     // Inline images
     for (const m of [...raw.matchAll(/(?:src|href)="([^"]+\.(jpe?g|png|gif|svg|webp))"/gi)]) {
       const rel = m[1];
       if (rel.startsWith('data:') || rel.startsWith('http')) continue;
-      const imgPath = fileDir + rel;
-      const imgFile = zip.file(imgPath) ?? zip.file(opfDir + rel) ?? zip.file(rel);
-      if (imgFile) {
-        const b64 = await imgFile.async('base64');
-        const ext = rel.split('.').pop()!.toLowerCase();
-        const mime = /jpe?g/.test(ext) ? 'image/jpeg' : ext === 'svg' ? 'image/svg+xml' : `image/${ext}`;
-        raw = raw.replace(m[0], m[0].replace(rel, `data:${mime};base64,${b64}`));
+      // Try multiple path resolutions
+      const candidates = [fileDir + rel, opfDir + rel, rel];
+      for (const candidate of candidates) {
+        const imgFile = zip.file(candidate);
+        if (imgFile) {
+          const b64 = await imgFile.async('base64');
+          const ext = rel.split('.').pop()!.toLowerCase();
+          const mime = /jpe?g/.test(ext) ? 'image/jpeg' : ext === 'svg' ? 'image/svg+xml' : `image/${ext}`;
+          raw = raw.replace(m[0], m[0].replace(rel, `data:${mime};base64,${b64}`));
+          break;
+        }
       }
     }
 
-    // Strip link/style tags that reference external files (they'll 404)
-    raw = raw.replace(/<link[^>]+rel=["']stylesheet["'][^>]*>/gi, '');
+    // Strip external stylesheet links only (keep inline style attributes)
+    raw = raw.replace(/<link[^>]+(?:stylesheet|text\/css)[^>]*\/?>/gi, '');
+    // Strip <style> blocks that set colors/backgrounds (they'll override our reset)
     raw = raw.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
 
-    // Extract body — handle namespaced xhtml
-    const bodyMatch = raw.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-    // If no body tag, take everything after </head> or the whole thing
-    const content = bodyMatch
-      ? bodyMatch[1]
-      : raw.replace(/^[\s\S]*<\/head>/i, '').replace(/<\/?html[^>]*>/gi, '').trim();
-
-    if (!content.trim()) continue; // skip empty chapters (nav pages, etc.)
-
-    const filename = href.split('/').pop()!;
-    chapters.push({ title: titleMap[filename] ?? `Chapter ${chapters.length + 1}`, html: content });
+    const content = extractBody(raw);
+    const filename = fullPath.split('/').pop()!;
+    const chTitle = titleMap[filename] ?? `Chapter ${chapters.length + 1}`;
+    chapters.push({ title: chTitle, html: content });
   }
 
-  if (chapters.length === 0) throw new Error('No readable chapters found in this EPUB.');
+  if (chapters.length === 0) throw new Error('No chapters found — the EPUB may be DRM-protected.');
   return chapters;
 }
 
 const BASE_CSS = `
-  * { box-sizing: border-box; }
-  body, div, p, span { color: #2a2a2a !important; background: transparent !important; }
-  p { margin: 0 0 1em; line-height: 1.75; }
-  h1,h2,h3,h4 { margin: 1.2em 0 0.5em; line-height: 1.3; }
+  * { box-sizing: border-box; max-width: 100%; }
+  p, div, span, li, td, th, blockquote, section, article {
+    color: #2a2a2a !important;
+    background: transparent !important;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    color: #111 !important;
+    background: transparent !important;
+    margin: 1.2em 0 0.5em;
+    line-height: 1.3;
+  }
+  p { margin: 0 0 0.9em; }
   img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
-  a { color: inherit; text-decoration: underline; }
+  a { color: #666 !important; text-decoration: underline; }
+  [style*="color"] { color: #2a2a2a !important; }
+  [style*="background"] { background: transparent !important; }
 `;
 
 export default function EpubReader({ epubData, title, startChapter = 0, onClose }: Props) {
@@ -115,11 +159,14 @@ export default function EpubReader({ epubData, title, startChapter = 0, onClose 
   const touchStartX = useRef(0);
 
   useEffect(() => {
-    setLoading(true);
-    setError('');
+    setLoading(true); setError('');
     parseEpub(epubData)
-      .then(chs => { setChapters(chs); setCurrent(Math.min(startChapter, chs.length - 1)); setLoading(false); })
-      .catch(e => { setError('Could not read EPUB: ' + e.message); setLoading(false); });
+      .then(chs => {
+        setChapters(chs);
+        setCurrent(Math.min(startChapter, Math.max(0, chs.length - 1)));
+        setLoading(false);
+      })
+      .catch(e => { setError(e.message); setLoading(false); });
   }, [epubData]);
 
   useEffect(() => { contentRef.current?.scrollTo(0, 0); }, [current]);
@@ -133,7 +180,6 @@ export default function EpubReader({ epubData, title, startChapter = 0, onClose 
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: '#fdfbf7', display: 'flex', flexDirection: 'column' }}>
 
-      {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
         padding: '10px 16px', paddingTop: 'max(env(safe-area-inset-top), 10px)',
@@ -151,7 +197,6 @@ export default function EpubReader({ epubData, title, startChapter = 0, onClose 
         </button>
       </div>
 
-      {/* TOC */}
       {showToc && (
         <div style={{
           position: 'absolute', top: 56, left: 0, right: 0, zIndex: 10,
@@ -169,14 +214,20 @@ export default function EpubReader({ epubData, title, startChapter = 0, onClose 
         </div>
       )}
 
-      {/* Content */}
-      <div ref={contentRef} style={{ flex: 1, overflowY: 'auto', padding: '24px 20px' } as any}
+      <div
+        ref={contentRef}
+        style={{ flex: 1, overflowY: 'auto', padding: '24px 20px' } as any}
         onTouchStart={e => { touchStartX.current = e.touches[0].clientX; }}
-        onTouchEnd={e => { const dx = e.changedTouches[0].clientX - touchStartX.current; if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1); }}>
-
-        {loading && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: '#888' }}>Parsing book…</div>}
-        {error && <div style={{ padding: 32, textAlign: 'center', color: '#c44', fontSize: 14 }}>{error}</div>}
-
+        onTouchEnd={e => { const dx = e.changedTouches[0].clientX - touchStartX.current; if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1); }}
+      >
+        {loading && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: '#888' }}>
+            Parsing book…
+          </div>
+        )}
+        {error && (
+          <div style={{ padding: 32, textAlign: 'center', color: '#c44', fontSize: 14, lineHeight: 1.6 }}>{error}</div>
+        )}
         {ch && !loading && (
           <>
             <style>{BASE_CSS}</style>
@@ -188,7 +239,6 @@ export default function EpubReader({ epubData, title, startChapter = 0, onClose 
         )}
       </div>
 
-      {/* Footer */}
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0,
         padding: '10px 20px', paddingBottom: 'max(env(safe-area-inset-bottom), 10px)',
