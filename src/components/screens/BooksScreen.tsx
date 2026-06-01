@@ -53,7 +53,7 @@ export default function BooksScreen() {
 
   async function loadBooks() {
     const b = await db.books.toArray();
-    setBooks(b.sort((a, z) => z.addedAt - a.addedAt));
+    setBooks(b.sort((a, z) => (z.lastOpenedAt ?? z.addedAt) - (a.lastOpenedAt ?? a.addedAt)));
   }
 
   async function loadNotes(bookId: string) {
@@ -357,7 +357,16 @@ export default function BooksScreen() {
         return (
           <motion.div key={book.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.04 * i }}
-            onClick={() => { setSelectedBook(book); loadNotes(book.id); }}
+            onClick={() => {
+              const now = Date.now();
+              db.books.update(book.id, { lastOpenedAt: now });
+              setBooks(prev => prev
+                .map(b => b.id === book.id ? { ...b, lastOpenedAt: now } : b)
+                .sort((a, z) => (z.lastOpenedAt ?? z.addedAt) - (a.lastOpenedAt ?? a.addedAt))
+              );
+              setSelectedBook(book);
+              loadNotes(book.id);
+            }}
             style={{
               display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px',
               background: 'var(--color-surface)', borderRadius: 16, marginBottom: 10,

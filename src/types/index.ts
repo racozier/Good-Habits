@@ -102,6 +102,7 @@ export interface Book {
   epubData?: string;
   completed: boolean;
   addedAt: number;
+  lastOpenedAt?: number;
 }
 
 export interface Reward {
