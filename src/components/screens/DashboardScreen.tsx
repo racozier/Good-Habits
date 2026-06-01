@@ -7,6 +7,7 @@ import { today, getGreeting, getWeekStart, addDays } from '../../utils/dateUtils
 import { calcTaskProgress, calcHealthProgress, calcMasterProgress, calcWorkoutProgress } from '../../utils/progress';
 import ProgressBar from '../ui/ProgressBar';
 import RewardPopup from '../ui/RewardPopup';
+import { SleepGauge, getSleepZone, SLEEP_COLORS, formatSleepLabel } from '../ui/SleepGauge';
 import type { Screen } from '../../store/appStore';
 
 interface SectionProgress { tasks: number; health: number; workout: number; }
@@ -20,61 +21,6 @@ const CARD_NAV: { icon: React.FC<any>; label: string; screen: Screen; color: str
   { icon: BookMarked,  label: 'Diary',    screen: 'diary',    color: '#5B9EA0' },
 ];
 
-// Pastel colours for sleep zones
-const SLEEP_COLORS = {
-  red:   { bg: '#FFCECE', needle: '#E07070', text: '#B04040' },
-  green: { bg: '#C4ECC4', needle: '#50A850', text: '#2A7A2A' },
-  blue:  { bg: '#B8D8FF', needle: '#4888D8', text: '#1850A0' },
-};
-
-function getSleepZone(totalMins: number) {
-  const h = totalMins / 60;
-  if (h < 7)    return 'red';
-  if (h <= 9.5) return 'green';
-  return 'blue';
-}
-
-/** Semi-circular gauge with 3 colour zones and an animated needle */
-function SleepGauge({ totalMins }: { totalMins: number }) {
-  const zone = getSleepZone(totalMins);
-  const col = SLEEP_COLORS[zone];
-
-  // needle rotation: 0° = straight up; -60° = far left; +60° = far right
-  const needleRot = zone === 'red' ? -62 : zone === 'green' ? 0 : 62;
-
-  // viewBox 100×60, centre (50,60), outer r=48, inner r=32
-  // arc goes from far-left (2,60) through top to far-right (98,60)
-  // 3 zones × 60° each, boundary points:
-  //   α=60  outer:(26,18.4) inner:(34,32.3)
-  //   α=120 outer:(74,18.4) inner:(66,32.3)
-  const dim = '#E8E8E8';
-  const zones = {
-    red:   { outer: 'M 2 60 A 48 48 0 0 1 26 18.4 L 34 32.3 A 32 32 0 0 0 18 60 Z', active: '#FFCECE' },
-    green: { outer: 'M 26 18.4 A 48 48 0 0 1 74 18.4 L 66 32.3 A 32 32 0 0 0 34 32.3 Z', active: '#C4ECC4' },
-    blue:  { outer: 'M 74 18.4 A 48 48 0 0 1 98 60 L 82 60 A 32 32 0 0 0 66 32.3 Z', active: '#B8D8FF' },
-  };
-
-  return (
-    <svg viewBox="0 0 100 62" style={{ width: 88, height: 55, flexShrink: 0 }}>
-      {(Object.entries(zones) as [keyof typeof zones, typeof zones.red][]).map(([z, { outer, active }]) => (
-        <path key={z} d={outer} fill={z === zone ? active : dim} />
-      ))}
-      {/* zone dividers */}
-      <line x1="26" y1="18.4" x2="34" y2="32.3" stroke="white" strokeWidth="1.5" />
-      <line x1="74" y1="18.4" x2="66" y2="32.3" stroke="white" strokeWidth="1.5" />
-      {/* needle */}
-      <g style={{
-        transform: `rotate(${needleRot}deg)`,
-        transformOrigin: '50px 60px',
-        transition: 'transform 0.9s cubic-bezier(0.34,1.56,0.64,1)',
-      }}>
-        <line x1="50" y1="60" x2="50" y2="24"
-          stroke={col.needle} strokeWidth="3.5" strokeLinecap="round" />
-      </g>
-      <circle cx="50" cy="60" r="5" fill={col.needle} />
-    </svg>
-  );
-}
 
 export default function DashboardScreen() {
   const { navigate, energyLevel, setViewingDate } = useAppStore();
