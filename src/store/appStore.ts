@@ -7,7 +7,7 @@ export type Screen =
   | 'life' | 'books' | 'rewards' | 'calendar'
   | 'diary' | 'sleep' | 'settings' | 'reader';
 
-export interface EpubReaderState { data: string; title: string; startChapter?: number; returnScreen: Screen; }
+export interface EpubReaderState { data: string; title: string; bookId?: string; startChapter?: number; returnScreen: Screen; }
 
 interface AppState {
   screen: Screen;

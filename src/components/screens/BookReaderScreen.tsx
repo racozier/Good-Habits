@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight, Bookmark, BookOpen } from 'lucide-react';
 import JSZip from 'jszip';
 import { useAppStore } from '../../store/appStore';
+import { db } from '../../db';
 
 interface RomanChapter { numeral: string; html: string; isToc?: boolean; }
 
@@ -217,6 +218,26 @@ export default function BookReaderScreen() {
   }, [epubReader?.data]);
 
   useEffect(() => { scrollRef.current?.scrollTo(0, 0); }, [current]);
+
+  // Sync reading progress to book DB entry for Books tab
+  useEffect(() => {
+    if (isRewards || !epubReader?.bookId || chapters.length === 0) return;
+    const bookId = epubReader.bookId;
+    // Count only non-TOC chapters for progress calculation
+    const romanChapters = chapters.filter(c => !c.isToc);
+    const romanIdx = chapters.slice(0, current + 1).filter(c => !c.isToc).length - 1;
+    if (romanChapters.length === 0 || romanIdx < 0) return;
+    db.books.get(bookId).then(book => {
+      if (!book) return;
+      // Map chapter position to page numbers proportionally
+      const progress = (romanIdx + 1) / romanChapters.length;
+      const newPage = Math.round(progress * book.totalPages);
+      const clamped = Math.min(newPage, book.totalPages);
+      if (clamped !== book.currentPage) {
+        db.books.update(bookId, { currentPage: clamped, completed: clamped >= book.totalPages });
+      }
+    });
+  }, [current, chapters, isRewards, epubReader?.bookId]);
 
   const go = useCallback((dir: 1 | -1) => {
     setCurrent(c => {
