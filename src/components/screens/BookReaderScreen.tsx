@@ -221,17 +221,23 @@ export default function BookReaderScreen() {
       .catch(e => { setError(e.message); setLoading(false); });
   }, [epubReader?.data]);
 
-  // Restore saved scroll position when chapter changes, else go to top
+  // Restore saved scroll position after content has rendered
   useEffect(() => {
+    if (loading) return;
     const el = scrollRef.current;
     if (!el) return;
     const key = epubReader?.title ? scrollKey(epubReader.title, current) : null;
     const saved = key ? localStorage.getItem(key) : null;
-    el.scrollTo(0, saved ? parseInt(saved) : 0);
-    setScrollPct(0);
-    setHeaderVisible(true);
-    lastScrollY.current = saved ? parseInt(saved) : 0;
-  }, [current]);
+    const targetY = saved ? parseInt(saved) : 0;
+    // Delay ensures dangerouslySetInnerHTML content has fully painted
+    const t = setTimeout(() => {
+      el.scrollTo(0, targetY);
+      setScrollPct(0);
+      setHeaderVisible(true);
+      lastScrollY.current = targetY;
+    }, 80);
+    return () => clearTimeout(t);
+  }, [current, loading]);
 
   // Scroll listener: track progress + hide/show header
   useEffect(() => {
