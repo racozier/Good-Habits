@@ -177,6 +177,7 @@ const READER_CSS = `
   a { color: #888; text-decoration: none; }
 `;
 
+function scrollKey(title: string, chapter: number) { return `epub-scroll-${title}-${chapter}`; }
 function bookmarkKey(title: string) { return `epub-bookmark-${title}`; }
 
 export default function BookReaderScreen() {
@@ -187,7 +188,10 @@ export default function BookReaderScreen() {
   const [error, setError] = useState('');
   const [debug, setDebug] = useState('');
   const [bookmarked, setBookmarked] = useState(false);
+  const [scrollPct, setScrollPct] = useState(0);
+  const [headerVisible, setHeaderVisible] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastScrollY = useRef(0);
 
   // From Rewards: locked to the unlocked chapter index
   // From Books: free navigation
@@ -217,7 +221,36 @@ export default function BookReaderScreen() {
       .catch(e => { setError(e.message); setLoading(false); });
   }, [epubReader?.data]);
 
-  useEffect(() => { scrollRef.current?.scrollTo(0, 0); }, [current]);
+  // Restore saved scroll position when chapter changes, else go to top
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const key = epubReader?.title ? scrollKey(epubReader.title, current) : null;
+    const saved = key ? localStorage.getItem(key) : null;
+    el.scrollTo(0, saved ? parseInt(saved) : 0);
+    setScrollPct(0);
+    setHeaderVisible(true);
+    lastScrollY.current = saved ? parseInt(saved) : 0;
+  }, [current]);
+
+  // Scroll listener: track progress + hide/show header
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      const maxScroll = scrollHeight - clientHeight;
+      setScrollPct(maxScroll > 0 ? scrollTop / maxScroll : 0);
+      // Hide header on scroll down, show on scroll up
+      const delta = scrollTop - lastScrollY.current;
+      if (Math.abs(delta) > 4) {
+        setHeaderVisible(delta < 0);
+        lastScrollY.current = scrollTop;
+      }
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [loading]);
 
   // Sync reading progress to book DB entry for Books tab
   useEffect(() => {
@@ -240,13 +273,16 @@ export default function BookReaderScreen() {
   }, [current, chapters, isRewards, epubReader?.bookId]);
 
   const go = useCallback((dir: 1 | -1) => {
+    // Save current scroll position before leaving chapter
+    if (epubReader?.title && scrollRef.current) {
+      localStorage.setItem(scrollKey(epubReader.title, current), String(scrollRef.current.scrollTop));
+    }
     setCurrent(c => {
       const next = Math.max(0, Math.min(chapters.length - 1, c + dir));
-      // Auto-save position for books-tab reading
       if (!isRewards && epubReader?.title) localStorage.setItem(bookmarkKey(epubReader.title), String(next));
       return next;
     });
-  }, [chapters.length, isRewards, epubReader?.title]);
+  }, [chapters.length, isRewards, epubReader?.title, current]);
 
   function toggleBookmark() {
     if (!epubReader?.title) return;
@@ -260,6 +296,13 @@ export default function BookReaderScreen() {
     setBookmarked(localStorage.getItem(bookmarkKey(epubReader.title)) === String(current));
   }, [current, epubReader?.title]);
 
+  function handleClose() {
+    if (epubReader?.title && scrollRef.current) {
+      localStorage.setItem(scrollKey(epubReader.title, current), String(scrollRef.current.scrollTop));
+    }
+    closeEpub();
+  }
+
   if (!epubReader) return null;
 
   const ch = chapters[current];
@@ -270,13 +313,19 @@ export default function BookReaderScreen() {
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', background: '#faf8f4' }}>
       <style>{READER_CSS}</style>
 
-      {/* Header */}
+      {/* Header — slides up on scroll down, back on scroll up */}
       <div style={{
-        position: 'sticky', top: 0, zIndex: 10, display: 'flex', alignItems: 'center', gap: 10,
-        padding: '10px 16px', paddingTop: 'max(env(safe-area-inset-top), 10px)',
-        background: '#faf8f4', borderBottom: '1px solid #e8e0d0',
+        position: 'sticky', top: 0, zIndex: 10,
+        transform: headerVisible ? 'translateY(0)' : 'translateY(-100%)',
+        transition: 'transform 0.25s ease',
+        background: '#faf8f4',
       }}>
-        <button onClick={closeEpub} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '10px 16px', paddingTop: 'max(env(safe-area-inset-top), 10px)',
+          borderBottom: '1px solid #e8e0d0',
+        }}>
+        <button onClick={handleClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
           <ArrowLeft size={22} color="#444" />
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -296,6 +345,14 @@ export default function BookReaderScreen() {
             <span style={{ fontSize: 11, color: '#aaa' }}>{chapters.length}</span>
           </div>
         )}
+        </div>
+        {/* Scroll progress bar */}
+        <div style={{ height: 3, background: '#e8e0d0' }}>
+          <div style={{
+            height: '100%', background: 'var(--color-primary)',
+            width: `${scrollPct * 100}%`, transition: 'width 0.1s linear',
+          }} />
+        </div>
       </div>
 
       {/* Content */}
