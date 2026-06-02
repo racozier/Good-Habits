@@ -103,5 +103,6 @@ export async function seedDefaultData() {
     { id: 'lg19', text: 'Practice a musical instrument', category: 'growth', difficulty: 1 },
     { id: 'lg20', text: 'Spend quality time with family', category: 'general', difficulty: 1 },
   ];
-  await db.lifeGoals.bulkPut(defaultLifeGoals);
+  const existingGoals = await db.lifeGoals.count();
+  if (existingGoals === 0) await db.lifeGoals.bulkPut(defaultLifeGoals);
 }

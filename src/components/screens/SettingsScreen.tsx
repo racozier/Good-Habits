@@ -27,7 +27,7 @@ export default function SettingsScreen() {
     const [tasks, diary, sleep, books, waterEntries, weightEntries,
            walkEntries, cleaningEntries, workoutEntries, workoutGoal,
            rewards, favoriteBook, daySettings, appSettings, bookNotes,
-           readingEntries] = await Promise.all([
+           readingEntries, lifeGoals] = await Promise.all([
       db.tasks.toArray(), db.diaryEntries.toArray(), db.sleepEntries.toArray(),
       db.books.toArray(), db.waterEntries.toArray(), db.weightEntries.toArray(),
       db.walkEntries.toArray(), db.cleaningEntries.toArray(),
@@ -35,13 +35,14 @@ export default function SettingsScreen() {
       db.rewards.toArray(), db.favoriteBook.toArray(),
       db.daySettings.toArray(), db.appSettings.toArray(),
       db.bookNotes.toArray(), db.readingEntries.toArray(),
+      db.lifeGoals.toArray(),
     ]);
     const payload = {
       version: 1,
       exportedAt: new Date().toISOString(),
       tasks, diary, sleep, books, waterEntries, weightEntries,
       walkEntries, cleaningEntries, workoutEntries, workoutGoal,
-      rewards, favoriteBook, daySettings, appSettings, bookNotes, readingEntries,
+      rewards, favoriteBook, daySettings, appSettings, bookNotes, readingEntries, lifeGoals,
       localStorage: Object.fromEntries(
         Array.from({ length: localStorage.length }, (_, i) => {
           const k = localStorage.key(i)!;
@@ -83,6 +84,9 @@ export default function SettingsScreen() {
       if (data.appSettings?.length)    ops.push(db.appSettings.bulkPut(data.appSettings));
       if (data.bookNotes?.length)      ops.push(db.bookNotes.bulkPut(data.bookNotes));
       if (data.readingEntries?.length) ops.push(db.readingEntries.bulkPut(data.readingEntries));
+      if (data.lifeGoals?.length) {
+        ops.push(db.lifeGoals.clear().then(() => db.lifeGoals.bulkPut(data.lifeGoals)));
+      }
 
       // Restore localStorage (streaks, reward claims, bookmarks, theme)
       if (data.localStorage) {
