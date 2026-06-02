@@ -168,13 +168,13 @@ async function parseEpub(dataUrl: string): Promise<{ chapters: RomanChapter[]; d
 }
 
 const READER_CSS = `
-  * { box-sizing: border-box; max-width: 100%; color: #1a1a1a; background: transparent; }
-  p { margin: 0 0 1em; }
-  h1,h2,h3,h4,h5,h6 { margin: 1.4em 0 0.6em; line-height: 1.3; text-align: center; }
-  em, i { font-style: italic; }
-  strong, b { font-weight: 700; }
-  img { max-width: 100%; height: auto; display: block; margin: 1.5em auto; }
-  a { color: #888; text-decoration: none; }
+  .epub-content * { box-sizing: border-box; max-width: 100%; color: #1a1a1a; background: transparent; }
+  .epub-content p { margin: 0 0 1em; }
+  .epub-content h1,.epub-content h2,.epub-content h3,.epub-content h4,.epub-content h5,.epub-content h6 { margin: 1.4em 0 0.6em; line-height: 1.3; text-align: center; }
+  .epub-content em, .epub-content i { font-style: italic; }
+  .epub-content strong, .epub-content b { font-weight: 700; }
+  .epub-content img { max-width: 100%; height: auto; display: block; margin: 1.5em auto; }
+  .epub-content a { color: #888; text-decoration: none; }
 `;
 
 function scrollKey(title: string, chapter: number) { return `epub-scroll-${title}-${chapter}`; }
@@ -316,12 +316,12 @@ export default function BookReaderScreen() {
   const canNext = current < chapters.length - 1;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', background: '#faf8f4' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden', background: '#faf8f4' }}>
       <style>{READER_CSS}</style>
 
-      {/* Header — slides up on scroll down, back on scroll up */}
+      {/* Fixed header — slides up on scroll down, shows on scroll up */}
       <div style={{
-        position: 'sticky', top: 0, zIndex: 10,
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 10,
         transform: headerVisible ? 'translateY(0)' : 'translateY(-100%)',
         transition: 'transform 0.25s ease',
         background: '#faf8f4',
@@ -331,56 +331,62 @@ export default function BookReaderScreen() {
           padding: '10px 16px', paddingTop: 'max(env(safe-area-inset-top), 10px)',
           borderBottom: '1px solid #e8e0d0',
         }}>
-        <button onClick={handleClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-          <ArrowLeft size={22} color="#444" />
-        </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, color: '#222', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {epubReader.title}
-          </div>
-          {ch && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{ch.isToc ? 'Contents' : `Chapter ${ch.numeral}`}{!isRewards && chapters.length > 1 ? ` · ${current + 1} / ${chapters.length}` : ''}</div>}
-        </div>
-        {!isRewards && (
-          <button onClick={toggleBookmark} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-            <Bookmark size={20} color={bookmarked ? 'var(--color-primary)' : '#ccc'} fill={bookmarked ? 'var(--color-primary)' : 'none'} />
+          <button onClick={handleClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+            <ArrowLeft size={22} color="#444" />
           </button>
-        )}
-        {!isRewards && chapters.length > 1 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <BookOpen size={14} color="#aaa" />
-            <span style={{ fontSize: 11, color: '#aaa' }}>{chapters.length}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: '#222', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {epubReader.title}
+            </div>
+            {ch && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{ch.isToc ? 'Contents' : `Chapter ${ch.numeral}`}{!isRewards && chapters.length > 1 ? ` · ${current + 1} / ${chapters.length}` : ''}</div>}
           </div>
-        )}
+          {!isRewards && (
+            <button onClick={toggleBookmark} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+              <Bookmark size={20} color={bookmarked ? 'var(--color-primary)' : '#ccc'} fill={bookmarked ? 'var(--color-primary)' : 'none'} />
+            </button>
+          )}
+          {!isRewards && chapters.length > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <BookOpen size={14} color="#aaa" />
+              <span style={{ fontSize: 11, color: '#aaa' }}>{chapters.length}</span>
+            </div>
+          )}
         </div>
         {/* Scroll progress bar */}
-        <div style={{ height: 3, background: '#e8e0d0' }}>
+        <div style={{ height: 3, backgroundColor: '#e8e0d0' }}>
           <div style={{
-            height: '100%', background: 'var(--color-primary)',
+            height: '100%', backgroundColor: 'var(--color-primary)',
             width: `${scrollPct * 100}%`, transition: 'width 0.1s linear',
           }} />
         </div>
       </div>
 
-      {/* Content */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '28px 22px 100px' } as any}>
+      {/* Content — fills remaining height, scrolls internally */}
+      <div ref={scrollRef} style={{
+        flex: 1, overflowY: 'auto',
+        paddingTop: 66, /* header height approx */
+        paddingLeft: 22, paddingRight: 22,
+        paddingBottom: !isRewards && chapters.length > 1 ? 100 : 40,
+      }}>
         {loading && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: '30vh', color: '#aaa', fontSize: 15 }}>
             Opening book…
           </div>
         )}
         {error && (
-          <div style={{ padding: 20, color: '#c44', fontSize: 13, lineHeight: 1.7, background: '#fff5f5', borderRadius: 12 }}>
+          <div style={{ padding: 20, color: '#c44', fontSize: 13, lineHeight: 1.7, backgroundColor: '#fff5f5', borderRadius: 12 }}>
             <strong>Error:</strong> {error}
           </div>
         )}
         {!loading && !error && !ch && (
-          <div style={{ padding: 20, color: '#888', fontSize: 13, background: '#f5f5f5', borderRadius: 12 }}>
+          <div style={{ padding: 20, color: '#888', fontSize: 13, backgroundColor: '#f5f5f5', borderRadius: 12 }}>
             Chapter not found. Debug: {debug}
           </div>
         )}
         {ch && !loading && (
           <div
             key={current}
+            className="epub-content"
             style={{ fontSize: 18, lineHeight: 1.85, color: '#1a1a1a', maxWidth: 660, margin: '0 auto', fontFamily: 'Georgia, serif' }}
             dangerouslySetInnerHTML={{ __html: ch.html }}
           />
@@ -393,7 +399,7 @@ export default function BookReaderScreen() {
           position: 'fixed', bottom: 0, left: 0, right: 0,
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           padding: '10px 20px', paddingBottom: 'max(env(safe-area-inset-bottom), 10px)',
-          background: '#faf8f4', borderTop: '1px solid #e8e0d0',
+          backgroundColor: '#faf8f4', borderTop: '1px solid #e8e0d0',
         }}>
           <button onClick={() => go(-1)} disabled={!canPrev} style={{
             background: 'none', border: '1.5px solid #ddd', borderRadius: 12,
