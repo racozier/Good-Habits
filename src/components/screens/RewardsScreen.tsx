@@ -20,29 +20,7 @@ export default function RewardsScreen() {
   const [pendingEpub, setPendingEpub] = useState<{ data: string; defaultName: string } | null>(null);
   const [epubTitle, setEpubTitle] = useState('');
 
-  useEffect(() => { loadRewards(); loadFavoriteBook(); syncUnlockedChapters(); }, []);
-
-  function getMaxUnlockedTier(): number {
-    let maxTier = 0;
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k?.startsWith('reward-claimed-')) {
-        const tiers: number[] = JSON.parse(localStorage.getItem(k) || '[]');
-        if (tiers.length > 0) maxTier = Math.max(maxTier, ...tiers);
-      }
-    }
-    return maxTier;
-  }
-
-  async function syncUnlockedChapters() {
-    const fb = await db.favoriteBook.get('favorite');
-    if (!fb) return;
-    const maxTier = getMaxUnlockedTier();
-    if (maxTier !== fb.unlockedChapters) {
-      await db.favoriteBook.update('favorite', { unlockedChapters: maxTier });
-      loadFavoriteBook();
-    }
-  }
+  useEffect(() => { loadRewards(); loadFavoriteBook(); }, []);
 
   async function loadRewards() {
     const r = await db.rewards.toArray();
@@ -88,22 +66,11 @@ export default function RewardsScreen() {
   async function confirmEpubUpload() {
     if (!pendingEpub) return;
     const title = epubTitle.trim() || pendingEpub.defaultName;
-    // Count tiers unlocked based on how many reward tiers have been claimed today
-    const claimedKey = `reward-claimed-${new Date().toISOString().split('T')[0]}`;
-    const claimed: number[] = JSON.parse(localStorage.getItem(claimedKey) || '[]');
-    // Also check any day's max claimed tier across all saved days
-    let maxTier = 0;
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k?.startsWith('reward-claimed-')) {
-        const tiers: number[] = JSON.parse(localStorage.getItem(k) || '[]');
-        if (tiers.length > 0) maxTier = Math.max(maxTier, ...tiers);
-      }
-    }
-    const unlockedChapters = maxTier;
+    // Preserve existing unlocked chapters when replacing the EPUB
+    const existing = await db.favoriteBook.get('favorite');
     const fb: FavoriteBook = {
       id: 'favorite', title, epubData: pendingEpub.data,
-      totalChapters: 20, unlockedChapters
+      totalChapters: 20, unlockedChapters: existing?.unlockedChapters ?? 0,
     };
     await db.favoriteBook.put(fb);
     setPendingEpub(null);
