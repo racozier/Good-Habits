@@ -1,11 +1,20 @@
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, ChevronDown, ChevronUp, BookOpen, X } from 'lucide-react';
 import { db } from '../../db';
 import { formatShortDate, today, addDays } from '../../utils/dateUtils';
 import { useAppStore } from '../../store/appStore';
 import Modal from '../ui/Modal';
 import { SleepGauge, getSleepZone, SLEEP_COLORS, formatSleepLabel } from '../ui/SleepGauge';
-import type { Task } from '../../types';
+import type { Task, DiaryEntry } from '../../types';
+
+const DIARY_SECTIONS: { key: keyof DiaryEntry; label: string }[] = [
+  { key: 'content', label: 'Thoughts' },
+  { key: 's1', label: 'What did I do good today?' },
+  { key: 's2', label: 'What can I do better?' },
+  { key: 's3', label: 'Positives from negatives?' },
+  { key: 's4', label: 'Learning experiences' },
+  { key: 's5', label: 'Prejudice about money — TRANSFORM' },
+];
 
 const TASK_COLORS: Record<string, string> = {
   physical: '#F5A07A', stress: '#D94545', growth: '#5B9EA0', environment: '#C8D5A0', general: '#F7DC8A'
@@ -24,6 +33,7 @@ interface DayMetrics {
   weightKg: number | null;
   sleepMins: number | null;
   diaryMood: string | null;
+  diaryEntry: DiaryEntry | null;
   incomeAmount: number;
 }
 
@@ -98,6 +108,7 @@ export default function CalendarScreen() {
   const [loadingMetrics, setLoadingMetrics] = useState(false);
   const [monthlySummary, setMonthlySummary] = useState<MonthlySummary | null>(null);
   const [tasksExpanded, setTasksExpanded] = useState(false);
+  const [diaryViewDate, setDiaryViewDate] = useState<string | null>(null);
 
   useEffect(() => { loadTasks(); loadMonthlySummary(); }, [year, month]);
 
@@ -186,6 +197,7 @@ export default function CalendarScreen() {
       weightKg: weights.length > 0 ? weights[weights.length - 1].kg : null,
       sleepMins,
       diaryMood: diary?.mood ?? null,
+      diaryEntry: diary ?? null,
       incomeAmount: income.reduce((s, e) => s + e.amount, 0),
     });
     setLoadingMetrics(false);
@@ -357,12 +369,25 @@ export default function CalendarScreen() {
               </button>
             )}
 
-            {dayMetrics.diaryMood && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--color-bg)', borderRadius: 10, padding: '8px 12px', alignSelf: 'flex-start' }}>
-                <span style={{ fontSize: 20 }}>{MOOD_EMOJI[dayMetrics.diaryMood]}</span>
-                <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Mood</span>
-              </div>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {dayMetrics.diaryMood && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--color-bg)', borderRadius: 10, padding: '8px 12px' }}>
+                  <span style={{ fontSize: 20 }}>{MOOD_EMOJI[dayMetrics.diaryMood]}</span>
+                  <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Mood</span>
+                </div>
+              )}
+              {dayMetrics.diaryEntry && (
+                <button onClick={() => setDiaryViewDate(dayMetrics.date)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    background: 'var(--color-bg)', borderRadius: 10, padding: '8px 12px',
+                    border: 'none', cursor: 'pointer',
+                  }}>
+                  <BookOpen size={16} color="var(--color-primary)" />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-primary)' }}>Read Diary</span>
+                </button>
+              )}
+            </div>
 
             {/* Stats grid — always show weight, water, cleaning; others only if logged */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -424,6 +449,52 @@ export default function CalendarScreen() {
           </div>
         ) : null}
       </Modal>
+
+      {/* Diary viewer — full-screen read-only overlay */}
+      {diaryViewDate && (() => {
+        const entry = dayMetrics?.diaryEntry;
+        if (!entry) return null;
+        const sections = DIARY_SECTIONS.filter(s => entry[s.key] && String(entry[s.key]).trim());
+        return (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 200,
+            background: 'var(--color-bg)', overflowY: 'auto',
+            display: 'flex', flexDirection: 'column',
+          }}>
+            {/* Header */}
+            <div style={{
+              position: 'sticky', top: 0, background: 'var(--color-bg)',
+              borderBottom: '1px solid var(--color-border)',
+              padding: '14px 16px', paddingTop: 'max(env(safe-area-inset-top), 14px)',
+              display: 'flex', alignItems: 'center', gap: 12, zIndex: 1,
+            }}>
+              <button onClick={() => setDiaryViewDate(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <X size={22} color="var(--color-text)" />
+              </button>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--color-text)' }}>Diary</div>
+                <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{formatShortDate(diaryViewDate)}</div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div style={{ padding: '24px 20px 60px', display: 'flex', flexDirection: 'column', gap: 28 }}>
+              {sections.length === 0 ? (
+                <p style={{ color: 'var(--color-text-muted)', fontSize: 15 }}>No diary entries for this day.</p>
+              ) : sections.map(s => (
+                <div key={String(s.key)}>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-primary)', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 8px' }}>
+                    {s.label}
+                  </p>
+                  <p style={{ fontSize: 16, lineHeight: 1.75, color: 'var(--color-text)', margin: 0, whiteSpace: 'pre-wrap' }}>
+                    {String(entry[s.key])}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
