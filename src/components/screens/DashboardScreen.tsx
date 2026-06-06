@@ -342,79 +342,116 @@ export default function DashboardScreen() {
 
       {/* Weight graph overlay */}
       {showWeightGraph && (() => {
-        const now = today();
-        // 30-day rolling window
-        const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        const rollingEntries = allWeightEntries.filter(e => e.date >= cutoff);
-        const entries = weightGraphTab === 'month' ? rollingEntries : allWeightEntries;
+        const now = new Date();
+        const yr = now.getFullYear();
+        const mo = now.getMonth();
+        const monthStr = `${yr}-${String(mo + 1).padStart(2, '0')}`;
+        const daysInMonth = new Date(yr, mo + 1, 0).getDate();
+        const monthStart = `${monthStr}-01`;
+        const monthEntries = allWeightEntries.filter(e => e.date.startsWith(monthStr));
+        const entries = weightGraphTab === 'month' ? monthEntries : allWeightEntries;
         const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
 
         function WeightChart({ data }: { data: { date: string; kg: number }[] }) {
           if (data.length === 0) return (
-            <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: 24 }}>No data</p>
+            <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: 40, fontSize: 14 }}>No data yet this month</p>
           );
-          const W = 320, H = 220, padL = 40, padR = 12, padT = 16, padB = 30;
+          const isMonth = weightGraphTab === 'month';
+          const W = 320, H = 210, padL = 40, padR = 16, padT = 24, padB = 30;
           const cW = W - padL - padR;
           const cH = H - padT - padB;
           const kgs = data.map(d => d.kg);
-          const minKg = Math.min(...kgs);
-          const maxKg = Math.max(...kgs);
+          const minKg = Math.min(...kgs) - 0.3;
+          const maxKg = Math.max(...kgs) + 0.3;
           const rangeKg = maxKg - minKg || 1;
-          const n = data.length;
 
-          function xPos(i: number) { return padL + (n === 1 ? cW / 2 : (i / (n - 1)) * cW); }
+          function xForDate(date: string) {
+            if (isMonth) {
+              const day = parseInt(date.split('-')[2]);
+              return padL + ((day - 1) / (daysInMonth - 1)) * cW;
+            }
+            const n = data.length;
+            const i = data.findIndex(d => d.date === date);
+            return padL + (n === 1 ? cW / 2 : (i / (n - 1)) * cW);
+          }
           function yPos(kg: number) { return padT + cH - ((kg - minKg) / rangeKg) * cH; }
 
-          const pathD = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${xPos(i)},${yPos(d.kg)}`).join(' ');
+          const pathD = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${xForDate(d.date)},${yPos(d.kg)}`).join(' ');
+          const latest = data[data.length - 1];
+          const lx = xForDate(latest.date);
+          const ly = yPos(latest.kg);
+          const areaD = data.length > 1
+            ? pathD + ` L${xForDate(latest.date)},${padT + cH} L${xForDate(data[0].date)},${padT + cH} Z`
+            : '';
 
-          // Trend line (linear regression)
-          const xs = data.map((_, i) => i);
-          const ys = data.map(d => d.kg);
-          const xMean = xs.reduce((s, x) => s + x, 0) / n;
-          const yMean = ys.reduce((s, y) => s + y, 0) / n;
-          const slope = xs.reduce((s, x, i) => s + (x - xMean) * (ys[i] - yMean), 0) / (xs.reduce((s, x) => s + (x - xMean) ** 2, 0) || 1);
-          const intercept = yMean - slope * xMean;
-          const trendY0 = intercept;
-          const trendY1 = slope * (n - 1) + intercept;
+          // Y gridlines at 3 levels
+          const yGridVals = [Math.min(...kgs), (Math.min(...kgs) + Math.max(...kgs)) / 2, Math.max(...kgs)];
+
+          // X ticks: for month view show day numbers at week intervals; for all-time show monthly ticks
+          const xTicks: { label: string; x: number }[] = [];
+          if (isMonth) {
+            [1, 8, 15, 22, daysInMonth].forEach(d => {
+              if (d <= daysInMonth) xTicks.push({ label: String(d), x: padL + ((d - 1) / (daysInMonth - 1)) * cW });
+            });
+          } else {
+            const n = data.length;
+            data.forEach((d, i) => {
+              if (i === 0 || i === n - 1 || i % Math.max(1, Math.floor(n / 5)) === 0) {
+                xTicks.push({ label: d.date.slice(5).replace('-', '/'), x: xForDate(d.date) });
+              }
+            });
+          }
 
           return (
             <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }}>
+              <defs>
+                <linearGradient id="wGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--color-primary)" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="var(--color-primary)" stopOpacity="0.01" />
+                </linearGradient>
+                <filter id="wGlow">
+                  <feGaussianBlur stdDeviation="2.5" result="blur" />
+                  <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+                </filter>
+              </defs>
               {/* Y gridlines */}
-              {[minKg, (minKg + maxKg) / 2, maxKg].map((v, i) => (
+              {yGridVals.map((v, i) => (
                 <g key={i}>
-                  <line x1={padL} x2={W - padR} y1={yPos(v)} y2={yPos(v)} stroke="var(--color-border)" strokeWidth={0.5} />
-                  <text x={padL - 4} y={yPos(v) + 4} textAnchor="end" fontSize={9} fill="var(--color-text-muted)">{v.toFixed(1)}</text>
+                  <line x1={padL} x2={W - padR} y1={yPos(v)} y2={yPos(v)}
+                    stroke="var(--color-border)" strokeWidth={0.7} strokeDasharray="5,4" />
+                  <text x={padL - 5} y={yPos(v) + 4} textAnchor="end" fontSize={9} fill="var(--color-text-muted)">{v.toFixed(1)}</text>
                 </g>
               ))}
-              {/* Trend line */}
-              <line x1={xPos(0)} y1={yPos(trendY0)} x2={xPos(n - 1)} y2={yPos(trendY1)}
-                stroke="#F5C842" strokeWidth={1.5} strokeDasharray="5,3" opacity={0.7} />
-              {/* Line */}
-              <path d={pathD} fill="none" stroke="var(--color-primary)" strokeWidth={2.5} strokeLinejoin="round" />
+              {/* Area fill */}
+              {areaD && <path d={areaD} fill="url(#wGrad)" />}
+              {/* Glowing line */}
+              <path d={pathD} fill="none" stroke="var(--color-primary)" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" opacity={0.35} filter="url(#wGlow)" />
+              {/* Main line */}
+              <path d={pathD} fill="none" stroke="var(--color-primary)" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
               {/* Dots */}
-              {data.map((d, i) => (
-                <circle key={i} cx={xPos(i)} cy={yPos(d.kg)} r={3.5} fill="var(--color-primary)" />
-              ))}
-              {/* Min/Max labels */}
-              <text x={xPos(kgs.indexOf(minKg))} y={yPos(minKg) + 14} textAnchor="middle" fontSize={8} fill="var(--color-text-muted)">
-                {minKg.toFixed(1)}
-              </text>
-              <text x={xPos(kgs.indexOf(maxKg))} y={yPos(maxKg) - 6} textAnchor="middle" fontSize={8} fill="var(--color-text-muted)">
-                {maxKg.toFixed(1)}
-              </text>
-              {/* X axis labels — weekly ticks (every 7th point, plus first and last) */}
               {data.map((d, i) => {
-                const isFirst = i === 0;
-                const isLast = i === n - 1;
-                const isWeekly = i % 7 === 0;
-                if (!isFirst && !isLast && !isWeekly) return null;
-                const label = d.date.slice(5).replace('-', '/');
+                const isLatest = i === data.length - 1;
+                const cx = xForDate(d.date);
+                const cy = yPos(d.kg);
                 return (
-                  <text key={i} x={xPos(i)} y={H - 6} textAnchor="middle" fontSize={8} fill="var(--color-text-muted)">
-                    {label}
-                  </text>
+                  <g key={d.date}>
+                    <circle cx={cx} cy={cy} r={isLatest ? 5 : 3.5}
+                      fill={isLatest ? 'var(--color-primary)' : 'var(--color-bg)'}
+                      stroke="var(--color-primary)" strokeWidth={isLatest ? 0 : 2} />
+                  </g>
                 );
               })}
+              {/* Pulse ring on latest point */}
+              <circle cx={lx} cy={ly} r={5} fill="var(--color-primary)" opacity={0}>
+                <animate attributeName="r" values="5;14;5" dur="3s" repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0.55;0;0.55" dur="3s" repeatCount="indefinite" />
+              </circle>
+              {/* Latest value label */}
+              <text x={lx} y={ly - 10} textAnchor="middle" fontSize={10} fontWeight="700" fill="var(--color-primary)">{latest.kg}</text>
+              {/* X axis labels */}
+              {xTicks.map((t, i) => (
+                <text key={i} x={t.x} y={H - 6} textAnchor="middle" fontSize={8} fill="var(--color-text-muted)">{t.label}</text>
+              ))}
             </svg>
           );
         }
@@ -434,11 +471,11 @@ export default function DashboardScreen() {
                   borderBottom: weightGraphTab === tab ? '2px solid var(--color-primary)' : '2px solid transparent',
                   fontSize: 14,
                 }}>
-                  {tab === 'month' ? 'Last 30 Days' : 'All Time'}
+                  {tab === 'month' ? 'This Month' : 'All Time'}
                 </button>
               ))}
             </div>
-            <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
+            <div style={{ flex: 1, overflow: 'auto', padding: '20px 16px' }}>
               <WeightChart data={sorted} />
             </div>
           </div>

@@ -88,6 +88,8 @@ export default function HealthScreen() {
     const fYest = (await db.fastingEntries.where('date').equals(yesterday).toArray())[0] ?? null;
     setFastingToday(fToday);
     setFastingYesterday(fYest);
+    setFirstMealInput(fToday?.firstMeal ?? '');
+    setLastMealInput(fToday?.lastMeal ?? '');
 
     // Month entries for graph
     const monthPrefix = date.slice(0, 7);
@@ -375,14 +377,15 @@ export default function HealthScreen() {
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
           <Clock size={18} color="#F5C842" />
-          <span style={{ fontWeight: 600, fontSize: 15 }}>Fast</span>
+          <span style={{ fontWeight: 600, fontSize: 15 }}>
+            {fastingToday?.firstMeal && !fastingToday?.lastMeal ? 'Eating Window' : 'Fast'}
+          </span>
           <span style={{ marginLeft: 'auto', fontWeight: 800, fontSize: 20, color: '#F5C842' }}>{fastTimer}</span>
         </div>
         <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--color-text-muted)', textAlign: 'center' }}>{fastLabel}</p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 12, color: 'var(--color-text-muted)', fontWeight: 600 }}>First meal</span>
-            {fastingToday?.firstMeal && <span style={{ fontSize: 12, color: 'var(--color-text)' }}>{fastingToday.firstMeal}</span>}
             <div style={{ display: 'flex', gap: 4 }}>
               <input
                 type="time"
@@ -397,7 +400,6 @@ export default function HealthScreen() {
           </div>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 12, color: 'var(--color-text-muted)', fontWeight: 600 }}>Last meal</span>
-            {fastingToday?.lastMeal && <span style={{ fontSize: 12, color: 'var(--color-text)' }}>{fastingToday.lastMeal}</span>}
             <div style={{ display: 'flex', gap: 4 }}>
               <input
                 type="time"
