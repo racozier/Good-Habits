@@ -339,6 +339,107 @@ export default function DashboardScreen() {
         energyLevel={energyLevel}
         onClose={() => setRewardPopup(null)}
       />
+
+      {/* Weight graph overlay */}
+      {showWeightGraph && (() => {
+        const now = today();
+        const monthPrefix = now.slice(0, 7);
+        const monthEntries = allWeightEntries.filter(e => e.date.startsWith(monthPrefix));
+        const entries = weightGraphTab === 'month' ? monthEntries : allWeightEntries;
+        const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+
+        function WeightChart({ data }: { data: { date: string; kg: number }[] }) {
+          if (data.length === 0) return (
+            <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: 24 }}>No data</p>
+          );
+          const W = 320, H = 220, padL = 40, padR = 12, padT = 16, padB = 30;
+          const cW = W - padL - padR;
+          const cH = H - padT - padB;
+          const kgs = data.map(d => d.kg);
+          const minKg = Math.min(...kgs);
+          const maxKg = Math.max(...kgs);
+          const rangeKg = maxKg - minKg || 1;
+          const n = data.length;
+
+          function xPos(i: number) { return padL + (n === 1 ? cW / 2 : (i / (n - 1)) * cW); }
+          function yPos(kg: number) { return padT + cH - ((kg - minKg) / rangeKg) * cH; }
+
+          const pathD = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${xPos(i)},${yPos(d.kg)}`).join(' ');
+
+          // Trend line (linear regression)
+          const xs = data.map((_, i) => i);
+          const ys = data.map(d => d.kg);
+          const xMean = xs.reduce((s, x) => s + x, 0) / n;
+          const yMean = ys.reduce((s, y) => s + y, 0) / n;
+          const slope = xs.reduce((s, x, i) => s + (x - xMean) * (ys[i] - yMean), 0) / (xs.reduce((s, x) => s + (x - xMean) ** 2, 0) || 1);
+          const intercept = yMean - slope * xMean;
+          const trendY0 = intercept;
+          const trendY1 = slope * (n - 1) + intercept;
+
+          return (
+            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }}>
+              {/* Y gridlines */}
+              {[minKg, (minKg + maxKg) / 2, maxKg].map((v, i) => (
+                <g key={i}>
+                  <line x1={padL} x2={W - padR} y1={yPos(v)} y2={yPos(v)} stroke="var(--color-border)" strokeWidth={0.5} />
+                  <text x={padL - 4} y={yPos(v) + 4} textAnchor="end" fontSize={9} fill="var(--color-text-muted)">{v.toFixed(1)}</text>
+                </g>
+              ))}
+              {/* Trend line */}
+              <line x1={xPos(0)} y1={yPos(trendY0)} x2={xPos(n - 1)} y2={yPos(trendY1)}
+                stroke="#F5C842" strokeWidth={1.5} strokeDasharray="5,3" opacity={0.7} />
+              {/* Line */}
+              <path d={pathD} fill="none" stroke="var(--color-primary)" strokeWidth={2.5} strokeLinejoin="round" />
+              {/* Dots */}
+              {data.map((d, i) => (
+                <circle key={i} cx={xPos(i)} cy={yPos(d.kg)} r={3.5} fill="var(--color-primary)" />
+              ))}
+              {/* Min/Max labels */}
+              <text x={xPos(kgs.indexOf(minKg))} y={yPos(minKg) + 14} textAnchor="middle" fontSize={8} fill="var(--color-text-muted)">
+                {minKg.toFixed(1)}
+              </text>
+              <text x={xPos(kgs.indexOf(maxKg))} y={yPos(maxKg) - 6} textAnchor="middle" fontSize={8} fill="var(--color-text-muted)">
+                {maxKg.toFixed(1)}
+              </text>
+              {/* X axis labels — show a few */}
+              {data.filter((_, i) => n <= 8 || i === 0 || i === n - 1 || i % Math.ceil(n / 5) === 0).map((d, _, arr) => {
+                const origIdx = data.indexOf(d);
+                const label = d.date.slice(5); // MM-DD
+                return (
+                  <text key={origIdx} x={xPos(origIdx)} y={H - 6} textAnchor="middle" fontSize={8} fill="var(--color-text-muted)">
+                    {label}
+                  </text>
+                );
+              })}
+            </svg>
+          );
+        }
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'var(--color-bg)', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--color-border)' }}>
+              <span style={{ fontWeight: 700, fontSize: 17, flex: 1 }}>Weight</span>
+              <button onClick={() => setShowWeightGraph(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--color-text)' }}>✕</button>
+            </div>
+            <div style={{ display: 'flex', borderBottom: '1px solid var(--color-border)' }}>
+              {(['month', 'alltime'] as const).map(tab => (
+                <button key={tab} onClick={() => setWeightGraphTab(tab)} style={{
+                  flex: 1, padding: '12px', background: 'none', border: 'none', cursor: 'pointer',
+                  fontWeight: weightGraphTab === tab ? 700 : 500,
+                  color: weightGraphTab === tab ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                  borderBottom: weightGraphTab === tab ? '2px solid var(--color-primary)' : '2px solid transparent',
+                  fontSize: 14,
+                }}>
+                  {tab === 'month' ? 'This Month' : 'All Time'}
+                </button>
+              ))}
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
+              <WeightChart data={sorted} />
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
