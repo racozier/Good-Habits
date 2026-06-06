@@ -343,9 +343,10 @@ export default function DashboardScreen() {
       {/* Weight graph overlay */}
       {showWeightGraph && (() => {
         const now = today();
-        const monthPrefix = now.slice(0, 7);
-        const monthEntries = allWeightEntries.filter(e => e.date.startsWith(monthPrefix));
-        const entries = weightGraphTab === 'month' ? monthEntries : allWeightEntries;
+        // 30-day rolling window
+        const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const rollingEntries = allWeightEntries.filter(e => e.date >= cutoff);
+        const entries = weightGraphTab === 'month' ? rollingEntries : allWeightEntries;
         const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
 
         function WeightChart({ data }: { data: { date: string; kg: number }[] }) {
@@ -401,12 +402,15 @@ export default function DashboardScreen() {
               <text x={xPos(kgs.indexOf(maxKg))} y={yPos(maxKg) - 6} textAnchor="middle" fontSize={8} fill="var(--color-text-muted)">
                 {maxKg.toFixed(1)}
               </text>
-              {/* X axis labels — show a few */}
-              {data.filter((_, i) => n <= 8 || i === 0 || i === n - 1 || i % Math.ceil(n / 5) === 0).map((d, _, arr) => {
-                const origIdx = data.indexOf(d);
-                const label = d.date.slice(5); // MM-DD
+              {/* X axis labels — weekly ticks (every 7th point, plus first and last) */}
+              {data.map((d, i) => {
+                const isFirst = i === 0;
+                const isLast = i === n - 1;
+                const isWeekly = i % 7 === 0;
+                if (!isFirst && !isLast && !isWeekly) return null;
+                const label = d.date.slice(5).replace('-', '/');
                 return (
-                  <text key={origIdx} x={xPos(origIdx)} y={H - 6} textAnchor="middle" fontSize={8} fill="var(--color-text-muted)">
+                  <text key={i} x={xPos(i)} y={H - 6} textAnchor="middle" fontSize={8} fill="var(--color-text-muted)">
                     {label}
                   </text>
                 );
@@ -430,7 +434,7 @@ export default function DashboardScreen() {
                   borderBottom: weightGraphTab === tab ? '2px solid var(--color-primary)' : '2px solid transparent',
                   fontSize: 14,
                 }}>
-                  {tab === 'month' ? 'This Month' : 'All Time'}
+                  {tab === 'month' ? 'Last 30 Days' : 'All Time'}
                 </button>
               ))}
             </div>

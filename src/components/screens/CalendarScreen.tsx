@@ -74,7 +74,7 @@ function DayCell({ date, tasks, isToday, onClick }: { date: string; tasks: Task[
     color: TASK_COLORS[color],
     pct: totalCompleted > 0 ? (count / totalCompleted) * 100 : 0,
   }));
-  const hasScary = tasks.some(t => t.completed && t.difficulty === 3);
+  const hasScary = tasks.some(t => t.scary && t.completed);
 
   return (
     <button onClick={onClick} style={{

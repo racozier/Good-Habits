@@ -34,7 +34,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   userName: 'Ada',
   viewingDate: today(),
   epubReader: null,
-  navigate: (screen) => set({ screen }),
+  navigate: (screen) => set({ screen, ...(screen === 'dashboard' ? { viewingDate: today() } : {}) }),
   setTheme: (theme) => set({ theme }),
   setEnergyLevel: (energyLevel) => set({ energyLevel }),
   setUserName: (userName) => set({ userName }),
