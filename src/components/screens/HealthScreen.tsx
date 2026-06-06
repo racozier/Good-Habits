@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Droplets, Dumbbell, Trash2, Scale, Footprints, Moon } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Droplets, Dumbbell, Trash2, Scale, Footprints, Moon, Clock } from 'lucide-react';
 import { db } from '../../db';
 import { today, uid, getWeekStart } from '../../utils/dateUtils';
 import { calcHealthProgress, calcWorkoutProgress } from '../../utils/progress';
@@ -7,7 +7,7 @@ import { useAppStore } from '../../store/appStore';
 import ProgressBar from '../ui/ProgressBar';
 import Modal from '../ui/Modal';
 import CountdownTimer from '../ui/CountdownTimer';
-import type { WorkoutEntry, WeightEntry, WalkEntry, IncomeEntry } from '../../types';
+import type { WorkoutEntry, WeightEntry, WalkEntry, IncomeEntry, FastingEntry } from '../../types';
 
 export default function HealthScreen() {
   const { viewingDate } = useAppStore();
@@ -38,6 +38,17 @@ export default function HealthScreen() {
   const [incomeNote, setIncomeNote] = useState('');
   const [showIncomeAdd, setShowIncomeAdd] = useState(false);
 
+  // Fasting state
+  const [fastingToday, setFastingToday] = useState<FastingEntry | null>(null);
+  const [fastingYesterday, setFastingYesterday] = useState<FastingEntry | null>(null);
+  const [fastTimer, setFastTimer] = useState('');
+  const [fastLabel, setFastLabel] = useState('');
+  const [firstMealInput, setFirstMealInput] = useState('');
+  const [lastMealInput, setLastMealInput] = useState('');
+  const [showFastingGraph, setShowFastingGraph] = useState(false);
+  const [fastingMonthEntries, setFastingMonthEntries] = useState<FastingEntry[]>([]);
+  const fastTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => { loadAll(); }, [date]);
 
   async function loadAll() {
@@ -66,6 +77,168 @@ export default function HealthScreen() {
 
     const ds = await db.daySettings.get(date);
     if (ds?.bedtime) setSavedBedtime(ds.bedtime);
+
+    // Fasting
+    const yesterday = (() => {
+      const d = new Date(date + 'T12:00:00');
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().split('T')[0];
+    })();
+    const fToday = (await db.fastingEntries.where('date').equals(date).toArray())[0] ?? null;
+    const fYest = (await db.fastingEntries.where('date').equals(yesterday).toArray())[0] ?? null;
+    setFastingToday(fToday);
+    setFastingYesterday(fYest);
+
+    // Month entries for graph
+    const monthPrefix = date.slice(0, 7);
+    const allFasting = await db.fastingEntries.toArray();
+    setFastingMonthEntries(allFasting.filter(e => e.date.startsWith(monthPrefix)));
+  }
+
+  function calcFastTimer(ft: FastingEntry | null, fy: FastingEntry | null): { timer: string; label: string } {
+    const now = new Date();
+    function parseTime(dateStr: string, timeStr: string): Date {
+      return new Date(`${dateStr}T${timeStr}:00`);
+    }
+    function diffMins(from: Date): number {
+      return Math.floor((now.getTime() - from.getTime()) / 60000);
+    }
+    function fmtMins(m: number): string {
+      const h = Math.floor(Math.abs(m) / 60);
+      const min = Math.abs(m) % 60;
+      return `${h}h ${min}m`;
+    }
+
+    if (ft?.lastMeal) {
+      const lastMealTime = parseTime(date, ft.lastMeal);
+      return { timer: fmtMins(diffMins(lastMealTime)), label: 'Fasting' };
+    }
+    if (ft?.firstMeal) {
+      const firstMealTime = parseTime(date, ft.firstMeal);
+      return { timer: fmtMins(diffMins(firstMealTime)), label: 'Eating window' };
+    }
+    if (fy?.lastMeal) {
+      const yesterday = (() => {
+        const d = new Date(date + 'T12:00:00');
+        d.setDate(d.getDate() - 1);
+        return d.toISOString().split('T')[0];
+      })();
+      const lastMealTime = parseTime(yesterday, fy.lastMeal);
+      return { timer: fmtMins(diffMins(lastMealTime)), label: 'Fasting' };
+    }
+    return { timer: '—', label: 'No data' };
+  }
+
+  useEffect(() => {
+    function update() {
+      const { timer, label } = calcFastTimer(fastingToday, fastingYesterday);
+      setFastTimer(timer);
+      setFastLabel(label);
+    }
+    update();
+    if (fastTimerRef.current) clearInterval(fastTimerRef.current);
+    fastTimerRef.current = setInterval(update, 60000);
+    return () => { if (fastTimerRef.current) clearInterval(fastTimerRef.current); };
+  }, [fastingToday, fastingYesterday, date]);
+
+  async function logFirstMeal() {
+    const time = firstMealInput || new Date().toTimeString().slice(0, 5);
+    const existing = fastingToday;
+    if (existing) {
+      await db.fastingEntries.update(existing.id, { firstMeal: time });
+    } else {
+      await db.fastingEntries.add({ id: uid(), date, firstMeal: time });
+    }
+    setFirstMealInput('');
+    loadAll();
+  }
+
+  async function logLastMeal() {
+    const time = lastMealInput || new Date().toTimeString().slice(0, 5);
+    const existing = fastingToday;
+    if (existing) {
+      await db.fastingEntries.update(existing.id, { lastMeal: time });
+    } else {
+      await db.fastingEntries.add({ id: uid(), date, lastMeal: time });
+    }
+    setLastMealInput('');
+    loadAll();
+  }
+
+  function FastingGraph() {
+    const now = new Date();
+    const monthPrefix = date.slice(0, 7);
+    // Calculate fast durations for each day that has data
+    const data: { day: number; hours: number }[] = [];
+    const sortedEntries = [...fastingMonthEntries].sort((a, b) => a.date.localeCompare(b.date));
+
+    for (let i = 0; i < sortedEntries.length; i++) {
+      const entry = sortedEntries[i];
+      const prevEntry = i > 0 ? sortedEntries[i - 1] : null;
+      const dayNum = parseInt(entry.date.split('-')[2]);
+
+      // Fast = from lastMeal (prev day or today) to firstMeal (today)
+      let fastHours: number | null = null;
+      if (entry.firstMeal) {
+        const firstMealDt = new Date(`${entry.date}T${entry.firstMeal}:00`);
+        if (prevEntry?.lastMeal) {
+          const prevDate = prevEntry.date;
+          const lastMealDt = new Date(`${prevDate}T${prevEntry.lastMeal}:00`);
+          fastHours = (firstMealDt.getTime() - lastMealDt.getTime()) / 3600000;
+        } else if (entry.lastMeal) {
+          // same-day, eating window day: fast = 24 - eating window
+          const lastMealDt = new Date(`${entry.date}T${entry.lastMeal}:00`);
+          const windowHrs = (lastMealDt.getTime() - firstMealDt.getTime()) / 3600000;
+          fastHours = 24 - windowHrs;
+        }
+      }
+      if (fastHours !== null && fastHours > 0) {
+        data.push({ day: dayNum, hours: Math.round(fastHours * 10) / 10 });
+      }
+    }
+
+    if (data.length === 0) {
+      return <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: 24 }}>No fasting data this month</p>;
+    }
+
+    const daysInMonth = new Date(parseInt(monthPrefix.split('-')[0]), parseInt(monthPrefix.split('-')[1]), 0).getDate();
+    const maxH = Math.max(...data.map(d => d.hours), 16);
+    const minH = 0;
+    const W = 300, H = 160, padL = 32, padR = 10, padT = 10, padB = 24;
+    const chartW = W - padL - padR;
+    const chartH = H - padT - padB;
+    const avg = data.reduce((s, d) => s + d.hours, 0) / data.length;
+
+    function xPos(day: number) { return padL + ((day - 1) / (daysInMonth - 1)) * chartW; }
+    function yPos(h: number) { return padT + chartH - ((h - minH) / (maxH - minH)) * chartH; }
+
+    const pathD = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${xPos(d.day)},${yPos(d.hours)}`).join(' ');
+    const avgY = yPos(avg);
+
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }}>
+        {/* Gridlines */}
+        {[0, 8, 16, 24].filter(v => v <= maxH).map(v => (
+          <g key={v}>
+            <line x1={padL} x2={W - padR} y1={yPos(v)} y2={yPos(v)} stroke="var(--color-border)" strokeWidth={0.5} />
+            <text x={padL - 4} y={yPos(v) + 4} textAnchor="end" fontSize={8} fill="var(--color-text-muted)">{v}h</text>
+          </g>
+        ))}
+        {/* Avg line */}
+        <line x1={padL} x2={W - padR} y1={avgY} y2={avgY} stroke="#F5C842" strokeWidth={1} strokeDasharray="4,3" />
+        <text x={W - padR} y={avgY - 3} textAnchor="end" fontSize={7} fill="#F5C842">avg {avg.toFixed(1)}h</text>
+        {/* Line */}
+        <path d={pathD} fill="none" stroke="var(--color-primary)" strokeWidth={2} />
+        {/* Dots */}
+        {data.map(d => (
+          <circle key={d.day} cx={xPos(d.day)} cy={yPos(d.hours)} r={3} fill="var(--color-primary)" />
+        ))}
+        {/* X labels */}
+        {data.map(d => (
+          <text key={d.day} x={xPos(d.day)} y={H - 6} textAnchor="middle" fontSize={7} fill="var(--color-text-muted)">{d.day}</text>
+        ))}
+      </svg>
+    );
   }
 
   async function addWater(ml: number) {
@@ -197,6 +370,64 @@ export default function HealthScreen() {
         </div>
         <ProgressBar value={Math.min((waterMl / 2000) * 100, 100)} height={8} showPercent={false} color="#5B9EA0" />
       </div>
+
+      {/* Fasting */}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <Clock size={18} color="#F5C842" />
+          <span style={{ fontWeight: 600, fontSize: 15 }}>Fast</span>
+          <span style={{ marginLeft: 'auto', fontWeight: 800, fontSize: 20, color: '#F5C842' }}>{fastTimer}</span>
+        </div>
+        <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--color-text-muted)', textAlign: 'center' }}>{fastLabel}</p>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 12, color: 'var(--color-text-muted)', fontWeight: 600 }}>First meal</span>
+            {fastingToday?.firstMeal && <span style={{ fontSize: 12, color: 'var(--color-text)' }}>{fastingToday.firstMeal}</span>}
+            <div style={{ display: 'flex', gap: 4 }}>
+              <input
+                type="time"
+                className="input"
+                value={firstMealInput}
+                onFocus={e => { if (!firstMealInput) setFirstMealInput(new Date().toTimeString().slice(0,5)); }}
+                onChange={e => setFirstMealInput(e.target.value)}
+                style={{ flex: 1, fontSize: 13, padding: '6px 8px' }}
+              />
+              <button className="btn-primary" onClick={logFirstMeal} style={{ whiteSpace: 'nowrap', padding: '6px 10px', fontSize: 13 }}>Log</button>
+            </div>
+          </div>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 12, color: 'var(--color-text-muted)', fontWeight: 600 }}>Last meal</span>
+            {fastingToday?.lastMeal && <span style={{ fontSize: 12, color: 'var(--color-text)' }}>{fastingToday.lastMeal}</span>}
+            <div style={{ display: 'flex', gap: 4 }}>
+              <input
+                type="time"
+                className="input"
+                value={lastMealInput}
+                onFocus={e => { if (!lastMealInput) setLastMealInput(new Date().toTimeString().slice(0,5)); }}
+                onChange={e => setLastMealInput(e.target.value)}
+                style={{ flex: 1, fontSize: 13, padding: '6px 8px' }}
+              />
+              <button className="btn-primary" onClick={logLastMeal} style={{ whiteSpace: 'nowrap', padding: '6px 10px', fontSize: 13 }}>Log</button>
+            </div>
+          </div>
+        </div>
+        <button className="btn-ghost" onClick={() => setShowFastingGraph(true)} style={{ width: '100%', marginTop: 4 }}>
+          📊 Graph
+        </button>
+      </div>
+
+      {/* Fasting graph overlay */}
+      {showFastingGraph && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'var(--color-bg)', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--color-border)' }}>
+            <span style={{ fontWeight: 700, fontSize: 17, flex: 1 }}>Fasting — This Month</span>
+            <button onClick={() => setShowFastingGraph(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--color-text)' }}>✕</button>
+          </div>
+          <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
+            <FastingGraph />
+          </div>
+        </div>
+      )}
 
       {/* Weight */}
       <div className="card" style={{ marginBottom: 12 }}>

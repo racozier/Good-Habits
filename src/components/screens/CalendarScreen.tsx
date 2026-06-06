@@ -74,11 +74,13 @@ function DayCell({ date, tasks, isToday, onClick }: { date: string; tasks: Task[
     color: TASK_COLORS[color],
     pct: totalCompleted > 0 ? (count / totalCompleted) * 100 : 0,
   }));
+  const hasScary = tasks.some(t => t.completed && t.difficulty === 3);
 
   return (
     <button onClick={onClick} style={{
       aspectRatio: '1', borderRadius: 10, padding: 4,
-      border: isToday ? '2px solid var(--color-primary)' : '1px solid transparent',
+      border: hasScary ? '2px solid #F5C842' : (isToday ? '2px solid var(--color-primary)' : '1px solid transparent'),
+      boxShadow: hasScary ? '0 0 8px 2px rgba(245,200,66,0.5)' : undefined,
       background: 'var(--color-bg)', cursor: 'pointer', display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center', gap: 3,
     }}>

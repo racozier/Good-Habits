@@ -3,7 +3,7 @@ import type {
   Task, RecurringTask, WaterEntry, WorkoutEntry, WorkoutGoal,
   ReadingEntry, CleaningEntry, FinancialTask, Book, BookNote, Reward,
   FavoriteBook, LifeGoal, DiaryEntry, SleepEntry, DaySettings, AppSettings,
-  IncomeEntry, WalkEntry, WeightEntry
+  IncomeEntry, WalkEntry, WeightEntry, FastingEntry
 } from '../types';
 
 export class GoodHabitsDB extends Dexie {
@@ -20,6 +20,7 @@ export class GoodHabitsDB extends Dexie {
   incomeEntries!: Table<IncomeEntry>;
   walkEntries!: Table<WalkEntry>;
   weightEntries!: Table<WeightEntry>;
+  fastingEntries!: Table<FastingEntry>;
   rewards!: Table<Reward>;
   favoriteBook!: Table<FavoriteBook>;
   lifeGoals!: Table<LifeGoal>;
@@ -51,6 +52,7 @@ export class GoodHabitsDB extends Dexie {
     this.version(2).stores({ bookNotes: 'id, bookId' });
     this.version(3).stores({ incomeEntries: 'id, date' });
     this.version(4).stores({ walkEntries: 'id, date', weightEntries: 'id, date' });
+    this.version(5).stores({ fastingEntries: 'id, date' });
   }
 }
 

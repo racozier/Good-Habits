@@ -169,3 +169,10 @@ export interface AppSettings {
   theme: Theme;
   streak: Streak;
 }
+
+export interface FastingEntry {
+  id: string;
+  date: string;
+  firstMeal?: string;  // HH:MM time
+  lastMeal?: string;   // HH:MM time
+}

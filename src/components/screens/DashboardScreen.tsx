@@ -32,6 +32,9 @@ export default function DashboardScreen() {
   const [sleepSummary, setSleepSummary] = useState<{ totalMins: number; bedtime: string; wakeTime: string } | null>(null);
   const [missingBedtime, setMissingBedtime] = useState(false);
   const [weightStats, setWeightStats] = useState<{ first: number; weekStart: number; current: number } | null>(null);
+  const [showWeightGraph, setShowWeightGraph] = useState(false);
+  const [allWeightEntries, setAllWeightEntries] = useState<{ date: string; kg: number }[]>([]);
+  const [weightGraphTab, setWeightGraphTab] = useState<'month' | 'alltime'>('month');
 
   useEffect(() => {
     loadProgress();
@@ -55,6 +58,7 @@ export default function DashboardScreen() {
 
     // Weight stats for dashboard widget
     const allWeights = await db.weightEntries.orderBy('date').toArray();
+    setAllWeightEntries(allWeights.map(w => ({ date: w.date, kg: w.kg })));
     if (allWeights.length >= 2) {
       const firstKg = allWeights[0].kg;
       const currentKg = allWeights[allWeights.length - 1].kg;
@@ -308,9 +312,16 @@ export default function DashboardScreen() {
         return (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
             style={{ padding: '16px 20px 8px' }}>
-            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-muted)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              ⚖️ Weight Stats
-            </p>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-muted)', margin: 0, textTransform: 'uppercase', letterSpacing: 0.5, flex: 1 }}>
+                ⚖️ Weight Stats
+              </p>
+              <button onClick={() => setShowWeightGraph(true)} style={{
+                background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+                borderRadius: 8, padding: '4px 10px', fontSize: 12, cursor: 'pointer',
+                color: 'var(--color-text-muted)', fontWeight: 600,
+              }}>📊 Graph</button>
+            </div>
             <div style={{ display: 'flex', gap: 12 }}>
               <StatTile label="All-time change" diff={totalDiff} up={totalUp} color={totalColor} />
               <StatTile label="This week" diff={weekDiff} up={weekUp} color={weekColor} />
