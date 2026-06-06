@@ -456,29 +456,61 @@ export default function DashboardScreen() {
           );
         }
 
+        let touchStartX = 0;
+        const tabs = ['month', 'alltime'] as const;
+
         return (
-          <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'var(--color-bg)', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--color-border)' }}>
-              <span style={{ fontWeight: 700, fontSize: 17, flex: 1 }}>Weight</span>
-              <button onClick={() => setShowWeightGraph(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--color-text)' }}>✕</button>
+          <>
+            {/* Backdrop */}
+            <div onClick={() => setShowWeightGraph(false)} style={{
+              position: 'fixed', inset: 0, zIndex: 300,
+              background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)',
+            }} />
+            {/* Floating card */}
+            <div style={{
+              position: 'fixed', bottom: 90, left: 16, right: 16, zIndex: 301,
+              background: 'var(--color-surface)', borderRadius: 24,
+              boxShadow: '0 8px 40px rgba(0,0,0,0.3)',
+              overflow: 'hidden',
+            }}>
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px 10px' }}>
+                <span style={{ fontWeight: 700, fontSize: 17, flex: 1 }}>⚖️ Weight</span>
+                <button onClick={() => setShowWeightGraph(false)} style={{
+                  background: 'var(--color-bg)', border: 'none', borderRadius: 20,
+                  width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 16,
+                }}>✕</button>
+              </div>
+              {/* Tab pills */}
+              <div style={{ display: 'flex', gap: 8, padding: '0 20px 12px' }}>
+                {tabs.map(tab => (
+                  <button key={tab} onClick={() => setWeightGraphTab(tab)} style={{
+                    flex: 1, padding: '7px 0', borderRadius: 20, border: 'none', cursor: 'pointer',
+                    fontWeight: 600, fontSize: 13,
+                    background: weightGraphTab === tab ? 'var(--color-primary)' : 'var(--color-bg)',
+                    color: weightGraphTab === tab ? 'white' : 'var(--color-text-muted)',
+                    transition: 'all 0.2s',
+                  }}>
+                    {tab === 'month' ? 'This Month' : 'All Time'}
+                  </button>
+                ))}
+              </div>
+              {/* Swipe-able chart area */}
+              <div style={{ padding: '0 12px 20px', touchAction: 'pan-y' }}
+                onTouchStart={e => { touchStartX = e.touches[0].clientX; }}
+                onTouchEnd={e => {
+                  const dx = e.changedTouches[0].clientX - touchStartX;
+                  if (Math.abs(dx) > 50) setWeightGraphTab(dx < 0 ? 'alltime' : 'month');
+                }}
+              >
+                <WeightChart data={sorted} />
+                <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--color-text-muted)', margin: '4px 0 0', opacity: 0.6 }}>
+                  ← swipe to switch →
+                </p>
+              </div>
             </div>
-            <div style={{ display: 'flex', borderBottom: '1px solid var(--color-border)' }}>
-              {(['month', 'alltime'] as const).map(tab => (
-                <button key={tab} onClick={() => setWeightGraphTab(tab)} style={{
-                  flex: 1, padding: '12px', background: 'none', border: 'none', cursor: 'pointer',
-                  fontWeight: weightGraphTab === tab ? 700 : 500,
-                  color: weightGraphTab === tab ? 'var(--color-primary)' : 'var(--color-text-muted)',
-                  borderBottom: weightGraphTab === tab ? '2px solid var(--color-primary)' : '2px solid transparent',
-                  fontSize: 14,
-                }}>
-                  {tab === 'month' ? 'This Month' : 'All Time'}
-                </button>
-              ))}
-            </div>
-            <div style={{ flex: 1, overflow: 'auto', padding: '20px 16px' }}>
-              <WeightChart data={sorted} />
-            </div>
-          </div>
+          </>
         );
       })()}
     </div>

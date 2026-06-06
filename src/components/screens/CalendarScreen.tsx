@@ -436,9 +436,17 @@ export default function CalendarScreen() {
                     {tasksExpanded ? <ChevronUp size={16} color="var(--color-text-muted)" /> : <ChevronDown size={16} color="var(--color-text-muted)" />}
                   </button>
                   {tasksExpanded && completed.map(t => (
-                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 7 }}>
+                    <div key={t.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10, marginBottom: 7,
+                      ...(t.scary ? {
+                        border: '1.5px solid #F5C842',
+                        borderRadius: 8, padding: '5px 8px',
+                        boxShadow: '0 0 6px rgba(245,200,66,0.25)',
+                      } : { padding: '5px 0' }),
+                    }}>
                       <div style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: TASK_COLORS[t.color] }} />
                       <span style={{ fontSize: 14, flex: 1, color: 'var(--color-text)' }}>{t.text}</span>
+                      {t.scary && <span style={{ fontSize: 11, color: '#F5C842' }}>⚡</span>}
                       <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{'★'.repeat(t.difficulty)}</span>
                     </div>
                   ))}
