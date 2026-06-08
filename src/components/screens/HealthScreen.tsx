@@ -278,6 +278,11 @@ export default function HealthScreen() {
     await db.workoutGoal.update('goal', { weeklyMinutes: workoutGoal + 10 }); loadAll();
   }
 
+  async function decreaseGoal() {
+    if (workoutGoal <= 10) return;
+    await db.workoutGoal.update('goal', { weeklyMinutes: workoutGoal - 10 }); loadAll();
+  }
+
   async function logCleaning() {
     await db.cleaningEntries.add({ id: uid(), date, minutes: 20 }); loadAll();
   }
@@ -520,8 +525,25 @@ export default function HealthScreen() {
           <Dumbbell size={18} color="var(--color-primary)" />
           <span style={{ fontWeight: 600, fontSize: 15 }}>Workout</span>
           <span style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--color-text-muted)' }}>
-            {weeklyWorkout}/{workoutGoal} min this week
+            {weeklyWorkout} min
           </span>
+        </div>
+        {/* Goal adjustment row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, background: 'var(--color-bg)', borderRadius: 12, padding: '8px 12px' }}>
+          <span style={{ fontSize: 12, color: 'var(--color-text-muted)', flex: 1 }}>Weekly goal</span>
+          <button onClick={decreaseGoal} disabled={workoutGoal <= 10} style={{
+            width: 30, height: 30, borderRadius: '50%', border: '1.5px solid var(--color-border)',
+            background: 'var(--color-surface)', cursor: workoutGoal > 10 ? 'pointer' : 'default',
+            opacity: workoutGoal <= 10 ? 0.35 : 1, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>−</button>
+          <span style={{ fontWeight: 700, fontSize: 15, minWidth: 56, textAlign: 'center', color: 'var(--color-text)' }}>
+            {workoutGoal} min
+          </span>
+          <button onClick={increaseGoal} style={{
+            width: 30, height: 30, borderRadius: '50%', border: 'none',
+            background: 'var(--color-primary)', cursor: 'pointer',
+            fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+          }}>+</button>
         </div>
         <ProgressBar value={workoutProg} height={8} showPercent={false} />
         {workoutEntries.filter(w => w.date === date).map(e => (
@@ -532,11 +554,6 @@ export default function HealthScreen() {
             </button>
           </div>
         ))}
-        {timesReached >= 2 && (
-          <button onClick={increaseGoal} className="btn-ghost" style={{ marginTop: 8, fontSize: 12, width: '100%' }}>
-            🏆 Increase goal to {workoutGoal + 10} min
-          </button>
-        )}
         {showWorkoutInput ? (
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
             <input className="input" type="number" placeholder="Minutes" value={workoutMins}

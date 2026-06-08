@@ -35,6 +35,9 @@ export default function DashboardScreen() {
   const [showWeightGraph, setShowWeightGraph] = useState(false);
   const [allWeightEntries, setAllWeightEntries] = useState<{ date: string; kg: number }[]>([]);
   const [weightGraphTab, setWeightGraphTab] = useState<'month' | 'alltime'>('month');
+  const [workoutStreak, setWorkoutStreak] = useState(0);
+  const [completedWorkoutWeeks, setCompletedWorkoutWeeks] = useState<string[]>([]);
+  const [showWorkoutStreak, setShowWorkoutStreak] = useState(false);
 
   useEffect(() => {
     loadProgress();
@@ -85,6 +88,25 @@ export default function DashboardScreen() {
 
     const settings = await db.appSettings.get('settings');
     setStreak(settings?.streak.current ?? 0);
+
+    // Workout streak calculation
+    const allWorkoutsForStreak = await db.workoutEntries.toArray();
+    const weekTotals: Record<string, number> = {};
+    allWorkoutsForStreak.forEach(w => { weekTotals[w.weekStart] = (weekTotals[w.weekStart] || 0) + w.minutes; });
+    const completedWks = Object.entries(weekTotals)
+      .filter(([, mins]) => mins >= wkGoal)
+      .map(([ws]) => ws)
+      .sort();
+    setCompletedWorkoutWeeks(completedWks);
+    let wkStreak = 0;
+    for (let i = completedWks.length - 1; i >= 0; i--) {
+      if (i === completedWks.length - 1) { wkStreak = 1; continue; }
+      const expected = new Date(completedWks[i + 1] + 'T12:00:00');
+      expected.setDate(expected.getDate() - 7);
+      const exp = expected.toISOString().split('T')[0];
+      if (completedWks[i] === exp) wkStreak++; else break;
+    }
+    setWorkoutStreak(wkStreak);
 
     // Sleep: yesterday's bedtime → today's wake-up time
     const yesterday = addDays(date, -1);
@@ -149,13 +171,17 @@ export default function DashboardScreen() {
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {streak > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4,
-                background: 'var(--color-secondary)', borderRadius: 20, padding: '6px 12px' }}>
-                <Flame size={16} color="var(--color-primary)" />
-                <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-text)' }}>{streak}</span>
-              </div>
-            )}
+            {/* Workout streak fire — always visible */}
+            <button onClick={() => setShowWorkoutStreak(true)} style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              background: workoutStreak > 0 ? 'rgba(255,100,0,0.12)' : 'var(--color-secondary)',
+              borderRadius: 20, padding: '6px 12px', border: 'none', cursor: 'pointer',
+            }}>
+              <span style={{ fontSize: 18, filter: workoutStreak === 0 ? 'grayscale(1) opacity(0.45)' : 'none' }}>🔥</span>
+              <span style={{ fontWeight: 700, fontSize: 14, color: workoutStreak > 0 ? '#FF6400' : 'var(--color-text-muted)' }}>
+                {workoutStreak}
+              </span>
+            </button>
             <button onClick={() => navigate('greet')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6 }}>
               <Sun size={22} color="var(--color-primary)" />
             </button>
@@ -339,6 +365,142 @@ export default function DashboardScreen() {
         energyLevel={energyLevel}
         onClose={() => setRewardPopup(null)}
       />
+
+      {/* Workout streak overlay */}
+      {showWorkoutStreak && (() => {
+        // Build week history: all weeks from first completed week to now
+        const todayStr = today();
+        const currentWeekStart = getWeekStart(todayStr);
+
+        // Get earliest week we have any workout data
+        const firstWeek = completedWorkoutWeeks.length > 0 ? completedWorkoutWeeks[0] : currentWeekStart;
+
+        // Build all weeks from firstWeek to currentWeekStart
+        const allWeeks: string[] = [];
+        let w = firstWeek;
+        while (w <= currentWeekStart) {
+          allWeeks.push(w);
+          const next = new Date(w + 'T12:00:00');
+          next.setDate(next.getDate() + 7);
+          w = next.toISOString().split('T')[0];
+        }
+
+        const completedSet = new Set(completedWorkoutWeeks);
+
+        // Group weeks by month label
+        const monthGroups: { label: string; weeks: string[] }[] = [];
+        allWeeks.forEach(ws => {
+          const d = new Date(ws + 'T12:00:00');
+          const label = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+          const last = monthGroups[monthGroups.length - 1];
+          if (!last || last.label !== label) monthGroups.push({ label, weeks: [ws] });
+          else last.weeks.push(ws);
+        });
+
+        function fmtWeekRange(ws: string) {
+          const mon = new Date(ws + 'T12:00:00');
+          const sun = new Date(ws + 'T12:00:00');
+          sun.setDate(sun.getDate() + 6);
+          const fmt = (d: Date) => `${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+          return `${fmt(mon)} – ${fmt(sun)}`;
+        }
+
+        return (
+          <>
+            <style>{`
+              @keyframes firePulse {
+                0%, 100% { transform: scale(1); filter: drop-shadow(0 0 3px #FF6400); }
+                50% { transform: scale(1.25); filter: drop-shadow(0 0 8px #FF8C00); }
+              }
+              @keyframes fireBorder {
+                0%, 100% { box-shadow: 0 0 6px 1px rgba(255,100,0,0.5), inset 0 0 3px rgba(255,150,0,0.15); border-color: #FF6400; }
+                50% { box-shadow: 0 0 12px 3px rgba(255,140,0,0.7), inset 0 0 6px rgba(255,180,0,0.2); border-color: #FF8C00; }
+              }
+              .fire-badge { animation: firePulse 1.8s ease-in-out infinite; display: inline-block; }
+              .fire-week { animation: fireBorder 1.8s ease-in-out infinite; }
+            `}</style>
+            {/* Backdrop */}
+            <div onClick={() => setShowWorkoutStreak(false)} style={{
+              position: 'fixed', inset: 0, zIndex: 300,
+              background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)',
+            }} />
+            {/* Card */}
+            <div style={{
+              position: 'fixed', bottom: 90, left: 16, right: 16, zIndex: 301,
+              background: 'var(--color-surface)', borderRadius: 24,
+              boxShadow: '0 8px 40px rgba(0,0,0,0.3)',
+              maxHeight: '65vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            }}>
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px 10px', flexShrink: 0 }}>
+                <span style={{ fontWeight: 700, fontSize: 17, flex: 1 }}>
+                  🔥 Workout Streak
+                </span>
+                <div style={{
+                  background: workoutStreak > 0 ? 'rgba(255,100,0,0.12)' : 'var(--color-bg)',
+                  borderRadius: 20, padding: '4px 12px', marginRight: 10,
+                }}>
+                  <span style={{ fontWeight: 800, fontSize: 20, color: workoutStreak > 0 ? '#FF6400' : 'var(--color-text-muted)' }}>
+                    {workoutStreak}
+                  </span>
+                  <span style={{ fontSize: 12, color: 'var(--color-text-muted)', marginLeft: 4 }}>
+                    {workoutStreak === 1 ? 'week' : 'weeks'}
+                  </span>
+                </div>
+                <button onClick={() => setShowWorkoutStreak(false)} style={{
+                  background: 'var(--color-bg)', border: 'none', borderRadius: 20,
+                  width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 16,
+                }}>✕</button>
+              </div>
+              <p style={{ margin: '0 20px 10px', fontSize: 12, color: 'var(--color-text-muted)', flexShrink: 0 }}>
+                Goal: {workoutGoal} min/week · {completedWorkoutWeeks.length} week{completedWorkoutWeeks.length !== 1 ? 's' : ''} completed all-time
+              </p>
+              {/* Scrollable week list */}
+              <div style={{ overflowY: 'auto', padding: '0 16px 16px' }}>
+                {allWeeks.length === 0 ? (
+                  <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: 20, fontSize: 14 }}>
+                    No workout data yet. Start logging workouts to build your streak!
+                  </p>
+                ) : (
+                  monthGroups.map(group => (
+                    <div key={group.label} style={{ marginBottom: 14 }}>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-muted)', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        {group.label}
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {group.weeks.map(ws => {
+                          const done = completedSet.has(ws);
+                          const isCurrent = ws === currentWeekStart;
+                          return (
+                            <div key={ws} className={done ? 'fire-week' : undefined} style={{
+                              display: 'flex', alignItems: 'center', gap: 12,
+                              background: done ? 'rgba(255,100,0,0.07)' : 'var(--color-bg)',
+                              borderRadius: 12, padding: '9px 14px',
+                              border: done ? '1.5px solid #FF6400' : '1.5px solid var(--color-border)',
+                            }}>
+                              <span style={{ fontSize: 20 }} className={done ? 'fire-badge' : undefined}>
+                                {done ? '🔥' : '○'}
+                              </span>
+                              <div style={{ flex: 1 }}>
+                                <span style={{ fontSize: 13, fontWeight: done ? 600 : 400, color: done ? 'var(--color-text)' : 'var(--color-text-muted)' }}>
+                                  {fmtWeekRange(ws)}
+                                </span>
+                                {isCurrent && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--color-primary)', fontWeight: 600 }}>this week</span>}
+                              </div>
+                              {done && <span style={{ fontSize: 11, color: '#FF6400', fontWeight: 700 }}>✓</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Weight graph overlay */}
       {showWeightGraph && (() => {
