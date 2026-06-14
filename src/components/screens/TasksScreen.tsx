@@ -53,6 +53,7 @@ export default function TasksScreen() {
   const [pendingRecurTask, setPendingRecurTask] = useState<Task | null>(null);
   const [recurDays, setRecurDays] = useState<number[]>([]);
   const [scaryReward, setScaryReward] = useState<{ taskText: string } | null>(null);
+  const [overloadConfirm, setOverloadConfirm] = useState<Task | null>(null);
 
   const { listening, start, stop } = useSpeechToText((text) => setInput(prev => prev + text));
 
@@ -91,6 +92,11 @@ export default function TasksScreen() {
 
   async function deleteTask(id: string) {
     await db.tasks.delete(id);
+    loadAll();
+  }
+
+  async function markOverload(task: Task) {
+    await db.tasks.update(task.id, { overload: true });
     loadAll();
   }
 
@@ -154,13 +160,14 @@ export default function TasksScreen() {
   const maxDiff3 = energyLevel <= 4 ? 1 : energyLevel <= 7 ? 2 : 3;
   const progress = calcTaskProgress(tasks);
 
-  // Sort: scary (incomplete) > missed > regular
+  // Sort: scary (incomplete) > missed > regular > overload
   const scaryIncompleteTasks = tasks.filter(t => t.scary && !t.completed);
   const scaryCompletedTasks = tasks.filter(t => t.scary && t.completed);
-  const missedTasks = tasks.filter(t => !t.scary && t.missed && !t.completed);
-  const missedCompleted = tasks.filter(t => !t.scary && t.missed && t.completed);
-  const regularTasks = tasks.filter(t => !t.scary && !t.missed && !t.isRecurring);
-  const recurringTasksToday = tasks.filter(t => !t.scary && t.isRecurring);
+  const missedTasks = tasks.filter(t => !t.scary && t.missed && !t.completed && !t.overload);
+  const missedCompleted = tasks.filter(t => !t.scary && t.missed && t.completed && !t.overload);
+  const overloadTasks = tasks.filter(t => t.overload && !t.scary);
+  const regularTasks = tasks.filter(t => !t.scary && !t.missed && !t.isRecurring && !t.overload);
+  const recurringTasksToday = tasks.filter(t => !t.scary && t.isRecurring && !t.overload);
 
   const todayRecurring = recurring.filter(rt => rt.days.length === 0 || rt.days.includes(todayDow));
   const otherRecurring = recurring.filter(rt => rt.days.length > 0 && !rt.days.includes(todayDow));
@@ -357,16 +364,50 @@ export default function TasksScreen() {
       {/* Missed tasks */}
       {(missedTasks.length > 0 || missedCompleted.length > 0) && (
         <TaskList title="⏰ Carried Over" tasks={[...missedTasks, ...missedCompleted]}
-          onToggle={toggleTask} onDelete={deleteTask} onMakeRecurring={openRecurringPicker} onToggleScary={toggleScary} />
+          onToggle={toggleTask} onDelete={deleteTask} onMakeRecurring={openRecurringPicker} onToggleScary={toggleScary}
+          onHoldOverload={setOverloadConfirm} />
       )}
 
       {/* Today's tasks */}
       <TaskList title="Today's Tasks" tasks={regularTasks}
-        onToggle={toggleTask} onDelete={deleteTask} onMakeRecurring={openRecurringPicker} onToggleScary={toggleScary} />
+        onToggle={toggleTask} onDelete={deleteTask} onMakeRecurring={openRecurringPicker} onToggleScary={toggleScary}
+        onHoldOverload={setOverloadConfirm} />
 
       {recurringTasksToday.length > 0 && (
         <TaskList title="Recurring" tasks={recurringTasksToday}
-          onToggle={toggleTask} onDelete={deleteTask} onMakeRecurring={openRecurringPicker} onToggleScary={toggleScary} />
+          onToggle={toggleTask} onDelete={deleteTask} onMakeRecurring={openRecurringPicker} onToggleScary={toggleScary}
+          onHoldOverload={setOverloadConfirm} />
+      )}
+
+      {/* Overload tasks */}
+      {overloadTasks.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-muted)', marginBottom: 8, paddingLeft: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            ⏸ Overload — not counted today
+          </p>
+          {overloadTasks.map(task => (
+            <div key={task.id} style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+              background: 'var(--color-surface)', borderRadius: 14, marginBottom: 8,
+              opacity: 0.45, border: '1.5px dashed var(--color-border)',
+            }}>
+              <div style={{
+                width: 26, height: 26, borderRadius: '50%', border: '2px dashed var(--color-border)',
+                background: 'transparent', flexShrink: 0,
+              }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 15, fontWeight: 500, color: 'var(--color-text)',
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.text}</p>
+                <span style={{ fontSize: 10, background: 'var(--color-border)', color: 'var(--color-text-muted)', padding: '2px 6px', borderRadius: 6, fontWeight: 700, marginTop: 4, display: 'inline-block' }}>
+                  OVERLOAD
+                </span>
+              </div>
+              <button onClick={() => deleteTask(task.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <Trash2 size={15} color="#E88" />
+              </button>
+            </div>
+          ))}
+        </div>
       )}
 
       {/* Day picker modal */}
@@ -385,6 +426,24 @@ export default function TasksScreen() {
           ))}
         </div>
         <button className="btn-primary" onClick={saveRecurring} style={{ width: '100%' }}>Save as recurring</button>
+      </Modal>
+
+      {/* Overload confirmation */}
+      <Modal open={!!overloadConfirm} onClose={() => setOverloadConfirm(null)} title="⏸ Mark as Overload?">
+        <div style={{ padding: '4px 0 16px' }}>
+          <p style={{ fontSize: 14, color: 'var(--color-text-muted)', margin: '0 0 6px' }}>
+            "{overloadConfirm?.text}"
+          </p>
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '0 0 20px', lineHeight: 1.55 }}>
+            This task won't count toward today's progress bar. If not completed, it'll carry over tomorrow as a missed task — and count again then.
+          </p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn-ghost" onClick={() => setOverloadConfirm(null)} style={{ flex: 1 }}>Cancel</button>
+            <button className="btn-primary" onClick={() => { markOverload(overloadConfirm!); setOverloadConfirm(null); }} style={{ flex: 1 }}>
+              Yes, overload it
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* Scary task completed reward prompt */}
@@ -461,12 +520,13 @@ function ScaryTaskItem({ task, onToggle, onDelete, onToggleScary }: {
   );
 }
 
-function TaskList({ title, tasks, onToggle, onDelete, onMakeRecurring, onToggleScary }: {
+function TaskList({ title, tasks, onToggle, onDelete, onMakeRecurring, onToggleScary, onHoldOverload }: {
   title: string; tasks: Task[];
   onToggle: (id: string, c: boolean) => void;
   onDelete: (id: string) => void;
   onMakeRecurring: (t: Task) => void;
   onToggleScary: (t: Task) => void;
+  onHoldOverload?: (t: Task) => void;
 }) {
   const incomplete = tasks.filter(t => !t.completed);
   const complete = tasks.filter(t => t.completed);
@@ -476,8 +536,16 @@ function TaskList({ title, tasks, onToggle, onDelete, onMakeRecurring, onToggleS
     <div style={{ marginBottom: 16 }}>
       <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: 8, paddingLeft: 4 }}>{title}</p>
       <AnimatePresence>
-        {[...incomplete, ...complete].map(task => (
+        {[...incomplete, ...complete].map(task => {
+          let holdTimer: ReturnType<typeof setTimeout> | null = null;
+          return (
           <motion.div key={task.id} layout initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
+            onTouchStart={() => {
+              if (!onHoldOverload || task.overload) return;
+              holdTimer = setTimeout(() => { onHoldOverload(task); holdTimer = null; }, 2000);
+            }}
+            onTouchEnd={() => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } }}
+            onTouchMove={() => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } }}
             style={{
               display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
               background: 'var(--color-surface)', borderRadius: 14, marginBottom: 8,
@@ -516,7 +584,8 @@ function TaskList({ title, tasks, onToggle, onDelete, onMakeRecurring, onToggleS
               </button>
             </div>
           </motion.div>
-        ))}
+        );
+        })}
       </AnimatePresence>
     </div>
   );

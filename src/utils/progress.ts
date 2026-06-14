@@ -20,7 +20,7 @@ export function calcTaskProgress(tasks: Task[]): number {
     scaryDominance = Math.max(scaryDominance, cap);
   }
 
-  const regularTasks = tasks.filter(t => !t.scary);
+  const regularTasks = tasks.filter(t => !t.scary && !t.overload);
   const regularTotal = regularTasks.reduce((s, t) => s + t.difficulty, 0);
   const regularDone = regularTasks.filter(t => t.completed).reduce((s, t) => s + t.difficulty, 0);
   const regularPct = regularTotal === 0 ? (scaryTasks.length > 0 ? 0 : 0) : regularDone / regularTotal;

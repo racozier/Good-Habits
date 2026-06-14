@@ -42,6 +42,7 @@ export default function BooksScreen() {
   const [showAdd, setShowAdd] = useState(false);
   const [showTimer, setShowTimer] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  const [completedBookTitle, setCompletedBookTitle] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [totalPages, setTotalPages] = useState('');
@@ -88,7 +89,8 @@ export default function BooksScreen() {
     await db.books.update(book.id, { currentPage: clamped, completed });
     if (completed && !book.completed) {
       const fav = await db.favoriteBook.get('favorite');
-      if (fav) await db.favoriteBook.update('favorite', { unlockedChapters: fav.unlockedChapters + 3 });
+      if (fav) await db.favoriteBook.update('favorite', { unlockedChapters: fav.unlockedChapters + 4 });
+      setCompletedBookTitle(book.title);
     }
     const updated = { ...book, currentPage: clamped, completed };
     setSelectedBook(updated);
@@ -291,6 +293,33 @@ export default function BooksScreen() {
               </button>
             </div>
           ))}
+        </Modal>
+
+        {/* Book completion reward popup */}
+        <Modal open={!!completedBookTitle} onClose={() => setCompletedBookTitle(null)} title="📖 Book Complete!">
+          <div style={{ textAlign: 'center', padding: '8px 0 16px' }}>
+            <div style={{ fontSize: 56, marginBottom: 14 }}>🛋️</div>
+            <p style={{ fontWeight: 800, fontSize: 20, color: 'var(--color-text)', margin: '0 0 8px' }}>
+              You finished it!
+            </p>
+            <p style={{ fontSize: 15, color: 'var(--color-text-muted)', margin: '0 0 6px' }}>
+              "{completedBookTitle}"
+            </p>
+            <p style={{ fontSize: 14, color: 'var(--color-text-muted)', margin: '0 0 20px', lineHeight: 1.5 }}>
+              You deserve a laidback day today. Seriously — kick back, relax, and enjoy it. 🌿
+            </p>
+            <div style={{
+              background: 'rgba(245,200,66,0.12)', border: '1.5px solid #F5C842',
+              borderRadius: 14, padding: '12px 16px', marginBottom: 20,
+            }}>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#B8860B' }}>
+                🔓 +4 chapters unlocked in your favourite book!
+              </p>
+            </div>
+            <button className="btn-primary" onClick={() => setCompletedBookTitle(null)} style={{ width: '100%', fontSize: 16, padding: '14px' }}>
+              Take the day easy ✨
+            </button>
+          </div>
         </Modal>
       </div>
     );

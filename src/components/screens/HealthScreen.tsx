@@ -168,9 +168,9 @@ export default function HealthScreen() {
   }
 
   function FastingGraph() {
-    const now = new Date();
+    const [scrub, setScrub] = useState<{ x: number; point: { day: number; hours: number } } | null>(null);
+    const svgRef = useRef<SVGSVGElement>(null);
     const monthPrefix = date.slice(0, 7);
-    // Calculate fast durations for each day that has data
     const data: { day: number; hours: number }[] = [];
     const sortedEntries = [...fastingMonthEntries].sort((a, b) => a.date.localeCompare(b.date));
 
@@ -178,20 +178,15 @@ export default function HealthScreen() {
       const entry = sortedEntries[i];
       const prevEntry = i > 0 ? sortedEntries[i - 1] : null;
       const dayNum = parseInt(entry.date.split('-')[2]);
-
-      // Fast = from lastMeal (prev day or today) to firstMeal (today)
       let fastHours: number | null = null;
       if (entry.firstMeal) {
         const firstMealDt = new Date(`${entry.date}T${entry.firstMeal}:00`);
         if (prevEntry?.lastMeal) {
-          const prevDate = prevEntry.date;
-          const lastMealDt = new Date(`${prevDate}T${prevEntry.lastMeal}:00`);
+          const lastMealDt = new Date(`${prevEntry.date}T${prevEntry.lastMeal}:00`);
           fastHours = (firstMealDt.getTime() - lastMealDt.getTime()) / 3600000;
         } else if (entry.lastMeal) {
-          // same-day, eating window day: fast = 24 - eating window
           const lastMealDt = new Date(`${entry.date}T${entry.lastMeal}:00`);
-          const windowHrs = (lastMealDt.getTime() - firstMealDt.getTime()) / 3600000;
-          fastHours = 24 - windowHrs;
+          fastHours = 24 - (lastMealDt.getTime() - firstMealDt.getTime()) / 3600000;
         }
       }
       if (fastHours !== null && fastHours > 0) {
@@ -205,40 +200,70 @@ export default function HealthScreen() {
 
     const daysInMonth = new Date(parseInt(monthPrefix.split('-')[0]), parseInt(monthPrefix.split('-')[1]), 0).getDate();
     const maxH = Math.max(...data.map(d => d.hours), 16);
-    const minH = 0;
     const W = 300, H = 160, padL = 32, padR = 10, padT = 10, padB = 24;
     const chartW = W - padL - padR;
     const chartH = H - padT - padB;
     const avg = data.reduce((s, d) => s + d.hours, 0) / data.length;
 
     function xPos(day: number) { return padL + ((day - 1) / (daysInMonth - 1)) * chartW; }
-    function yPos(h: number) { return padT + chartH - ((h - minH) / (maxH - minH)) * chartH; }
+    function yPos(h: number) { return padT + chartH - (h / maxH) * chartH; }
 
     const pathD = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${xPos(d.day)},${yPos(d.hours)}`).join(' ');
     const avgY = yPos(avg);
 
+    function handlePointer(clientX: number) {
+      if (!svgRef.current) return;
+      const rect = svgRef.current.getBoundingClientRect();
+      const svgX = ((clientX - rect.left) / rect.width) * W;
+      let nearest = data[0];
+      let minDist = Infinity;
+      data.forEach(d => {
+        const dx = Math.abs(xPos(d.day) - svgX);
+        if (dx < minDist) { minDist = dx; nearest = d; }
+      });
+      if (minDist < chartW * 0.12) setScrub({ x: xPos(nearest.day), point: nearest });
+      else setScrub(null);
+    }
+
     return (
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }}>
-        {/* Gridlines */}
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', touchAction: 'none' }}
+        onPointerMove={e => handlePointer(e.clientX)}
+        onPointerLeave={() => setScrub(null)}
+      >
         {[0, 8, 16, 24].filter(v => v <= maxH).map(v => (
           <g key={v}>
             <line x1={padL} x2={W - padR} y1={yPos(v)} y2={yPos(v)} stroke="var(--color-border)" strokeWidth={0.5} />
             <text x={padL - 4} y={yPos(v) + 4} textAnchor="end" fontSize={8} fill="var(--color-text-muted)">{v}h</text>
           </g>
         ))}
-        {/* Avg line */}
         <line x1={padL} x2={W - padR} y1={avgY} y2={avgY} stroke="#F5C842" strokeWidth={1} strokeDasharray="4,3" />
         <text x={W - padR} y={avgY - 3} textAnchor="end" fontSize={7} fill="#F5C842">avg {avg.toFixed(1)}h</text>
-        {/* Line */}
         <path d={pathD} fill="none" stroke="var(--color-primary)" strokeWidth={2} />
-        {/* Dots */}
         {data.map(d => (
           <circle key={d.day} cx={xPos(d.day)} cy={yPos(d.hours)} r={3} fill="var(--color-primary)" />
         ))}
-        {/* X labels */}
         {data.map(d => (
           <text key={d.day} x={xPos(d.day)} y={H - 6} textAnchor="middle" fontSize={7} fill="var(--color-text-muted)">{d.day}</text>
         ))}
+        {scrub && (
+          <g>
+            <line x1={scrub.x} x2={scrub.x} y1={padT} y2={padT + chartH} stroke="var(--color-text)" strokeWidth={1} strokeDasharray="3,3" opacity={0.5} />
+            <circle cx={scrub.x} cy={yPos(scrub.point.hours)} r={4.5} fill="var(--color-text)" />
+            <rect
+              x={Math.min(scrub.x + 4, W - 62)}
+              y={yPos(scrub.point.hours) - 18}
+              width={58} height={16} rx={5}
+              fill="var(--color-surface)" stroke="var(--color-border)" strokeWidth={1}
+            />
+            <text
+              x={Math.min(scrub.x + 33, W - 33)}
+              y={yPos(scrub.point.hours) - 7}
+              textAnchor="middle" fontSize={8} fontWeight="700" fill="var(--color-text)"
+            >
+              Day {scrub.point.day}: {scrub.point.hours}h
+            </text>
+          </g>
+        )}
       </svg>
     );
   }

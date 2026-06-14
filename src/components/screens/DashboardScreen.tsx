@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { CheckSquare, Heart, BookOpen, Gift, Calendar, BookMarked, Flame, Settings, Sun, Dumbbell, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
@@ -11,6 +11,139 @@ import { SleepGauge, getSleepZone, SLEEP_COLORS, formatSleepLabel } from '../ui/
 import type { Screen } from '../../store/appStore';
 
 interface SectionProgress { tasks: number; health: number; workout: number; }
+
+function WeightChart({ data, isMonth, daysInMonth }: {
+  data: { date: string; kg: number }[];
+  isMonth: boolean;
+  daysInMonth: number;
+}) {
+  const [scrub, setScrub] = useState<{ x: number; entry: { date: string; kg: number } } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  if (data.length === 0) return (
+    <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: 40, fontSize: 14 }}>No data yet this month</p>
+  );
+
+  const W = 320, H = 210, padL = 40, padR = 16, padT = 24, padB = 30;
+  const cW = W - padL - padR;
+  const cH = H - padT - padB;
+  const kgs = data.map(d => d.kg);
+  const minKg = Math.min(...kgs) - 0.3;
+  const maxKg = Math.max(...kgs) + 0.3;
+  const rangeKg = maxKg - minKg || 1;
+
+  function xForDate(date: string) {
+    if (isMonth) {
+      const day = parseInt(date.split('-')[2]);
+      return padL + ((day - 1) / (daysInMonth - 1)) * cW;
+    }
+    const n = data.length;
+    const i = data.findIndex(d => d.date === date);
+    return padL + (n === 1 ? cW / 2 : (i / (n - 1)) * cW);
+  }
+  function yPos(kg: number) { return padT + cH - ((kg - minKg) / rangeKg) * cH; }
+
+  const pathD = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${xForDate(d.date)},${yPos(d.kg)}`).join(' ');
+  const latest = data[data.length - 1];
+  const lx = xForDate(latest.date);
+  const ly = yPos(latest.kg);
+  const areaD = data.length > 1
+    ? pathD + ` L${xForDate(latest.date)},${padT + cH} L${xForDate(data[0].date)},${padT + cH} Z`
+    : '';
+  const yGridVals = [Math.min(...kgs), (Math.min(...kgs) + Math.max(...kgs)) / 2, Math.max(...kgs)];
+  const xTicks: { label: string; x: number }[] = [];
+  if (isMonth) {
+    [1, 8, 15, 22, daysInMonth].forEach(d => {
+      if (d <= daysInMonth) xTicks.push({ label: String(d), x: padL + ((d - 1) / (daysInMonth - 1)) * cW });
+    });
+  } else {
+    const n = data.length;
+    data.forEach((d, i) => {
+      if (i === 0 || i === n - 1 || i % Math.max(1, Math.floor(n / 5)) === 0)
+        xTicks.push({ label: d.date.slice(5).replace('-', '/'), x: xForDate(d.date) });
+    });
+  }
+
+  function handlePointer(clientX: number) {
+    if (!svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const ratio = (clientX - rect.left) / rect.width;
+    const svgX = ratio * W;
+    // Find nearest data point by x
+    let nearest = data[0];
+    let minDist = Infinity;
+    data.forEach(d => {
+      const dx = Math.abs(xForDate(d.date) - svgX);
+      if (dx < minDist) { minDist = dx; nearest = d; }
+    });
+    if (minDist < cW * 0.15) setScrub({ x: xForDate(nearest.date), entry: nearest });
+    else setScrub(null);
+  }
+
+  return (
+    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', touchAction: 'none' }}
+      onPointerMove={e => handlePointer(e.clientX)}
+      onPointerLeave={() => setScrub(null)}
+    >
+      <defs>
+        <linearGradient id="wGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--color-primary)" stopOpacity="0.25" />
+          <stop offset="100%" stopColor="var(--color-primary)" stopOpacity="0.01" />
+        </linearGradient>
+        <filter id="wGlow">
+          <feGaussianBlur stdDeviation="2.5" result="blur" />
+          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+      </defs>
+      {yGridVals.map((v, i) => (
+        <g key={i}>
+          <line x1={padL} x2={W - padR} y1={yPos(v)} y2={yPos(v)} stroke="var(--color-border)" strokeWidth={0.7} strokeDasharray="5,4" />
+          <text x={padL - 5} y={yPos(v) + 4} textAnchor="end" fontSize={9} fill="var(--color-text-muted)">{v.toFixed(1)}</text>
+        </g>
+      ))}
+      {areaD && <path d={areaD} fill="url(#wGrad)" />}
+      <path d={pathD} fill="none" stroke="var(--color-primary)" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" opacity={0.35} filter="url(#wGlow)" />
+      <path d={pathD} fill="none" stroke="var(--color-primary)" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+      {data.map((d, i) => {
+        const isLatest = i === data.length - 1;
+        return (
+          <circle key={d.date} cx={xForDate(d.date)} cy={yPos(d.kg)}
+            r={isLatest ? 5 : 3.5}
+            fill={isLatest ? 'var(--color-primary)' : 'var(--color-bg)'}
+            stroke="var(--color-primary)" strokeWidth={isLatest ? 0 : 2} />
+        );
+      })}
+      <circle cx={lx} cy={ly} r={5} fill="var(--color-primary)" opacity={0}>
+        <animate attributeName="r" values="5;14;5" dur="3s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.55;0;0.55" dur="3s" repeatCount="indefinite" />
+      </circle>
+      <text x={lx} y={ly - 10} textAnchor="middle" fontSize={10} fontWeight="700" fill="var(--color-primary)">{latest.kg}</text>
+      {xTicks.map((t, i) => (
+        <text key={i} x={t.x} y={H - 6} textAnchor="middle" fontSize={8} fill="var(--color-text-muted)">{t.label}</text>
+      ))}
+      {/* Scrub line + tooltip */}
+      {scrub && (
+        <g>
+          <line x1={scrub.x} x2={scrub.x} y1={padT} y2={padT + cH} stroke="var(--color-text)" strokeWidth={1} strokeDasharray="3,3" opacity={0.5} />
+          <circle cx={scrub.x} cy={yPos(scrub.entry.kg)} r={5} fill="var(--color-text)" />
+          <rect
+            x={Math.min(scrub.x + 6, W - 78)}
+            y={yPos(scrub.entry.kg) - 22}
+            width={72} height={20} rx={6}
+            fill="var(--color-surface)" stroke="var(--color-border)" strokeWidth={1}
+          />
+          <text
+            x={Math.min(scrub.x + 42, W - 42)}
+            y={yPos(scrub.entry.kg) - 8}
+            textAnchor="middle" fontSize={9} fontWeight="700" fill="var(--color-text)"
+          >
+            {scrub.entry.kg} kg · {scrub.entry.date.slice(5).replace('-', '/')}
+          </text>
+        </g>
+      )}
+    </svg>
+  );
+}
 
 const CARD_NAV: { icon: React.FC<any>; label: string; screen: Screen; cssVar: string }[] = [
   { icon: CheckSquare, label: 'Tasks',    screen: 'tasks',    cssVar: '--color-primary' },
@@ -514,110 +647,6 @@ export default function DashboardScreen() {
         const entries = weightGraphTab === 'month' ? monthEntries : allWeightEntries;
         const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
 
-        function WeightChart({ data }: { data: { date: string; kg: number }[] }) {
-          if (data.length === 0) return (
-            <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: 40, fontSize: 14 }}>No data yet this month</p>
-          );
-          const isMonth = weightGraphTab === 'month';
-          const W = 320, H = 210, padL = 40, padR = 16, padT = 24, padB = 30;
-          const cW = W - padL - padR;
-          const cH = H - padT - padB;
-          const kgs = data.map(d => d.kg);
-          const minKg = Math.min(...kgs) - 0.3;
-          const maxKg = Math.max(...kgs) + 0.3;
-          const rangeKg = maxKg - minKg || 1;
-
-          function xForDate(date: string) {
-            if (isMonth) {
-              const day = parseInt(date.split('-')[2]);
-              return padL + ((day - 1) / (daysInMonth - 1)) * cW;
-            }
-            const n = data.length;
-            const i = data.findIndex(d => d.date === date);
-            return padL + (n === 1 ? cW / 2 : (i / (n - 1)) * cW);
-          }
-          function yPos(kg: number) { return padT + cH - ((kg - minKg) / rangeKg) * cH; }
-
-          const pathD = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${xForDate(d.date)},${yPos(d.kg)}`).join(' ');
-          const latest = data[data.length - 1];
-          const lx = xForDate(latest.date);
-          const ly = yPos(latest.kg);
-          const areaD = data.length > 1
-            ? pathD + ` L${xForDate(latest.date)},${padT + cH} L${xForDate(data[0].date)},${padT + cH} Z`
-            : '';
-
-          // Y gridlines at 3 levels
-          const yGridVals = [Math.min(...kgs), (Math.min(...kgs) + Math.max(...kgs)) / 2, Math.max(...kgs)];
-
-          // X ticks: for month view show day numbers at week intervals; for all-time show monthly ticks
-          const xTicks: { label: string; x: number }[] = [];
-          if (isMonth) {
-            [1, 8, 15, 22, daysInMonth].forEach(d => {
-              if (d <= daysInMonth) xTicks.push({ label: String(d), x: padL + ((d - 1) / (daysInMonth - 1)) * cW });
-            });
-          } else {
-            const n = data.length;
-            data.forEach((d, i) => {
-              if (i === 0 || i === n - 1 || i % Math.max(1, Math.floor(n / 5)) === 0) {
-                xTicks.push({ label: d.date.slice(5).replace('-', '/'), x: xForDate(d.date) });
-              }
-            });
-          }
-
-          return (
-            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }}>
-              <defs>
-                <linearGradient id="wGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--color-primary)" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="var(--color-primary)" stopOpacity="0.01" />
-                </linearGradient>
-                <filter id="wGlow">
-                  <feGaussianBlur stdDeviation="2.5" result="blur" />
-                  <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-                </filter>
-              </defs>
-              {/* Y gridlines */}
-              {yGridVals.map((v, i) => (
-                <g key={i}>
-                  <line x1={padL} x2={W - padR} y1={yPos(v)} y2={yPos(v)}
-                    stroke="var(--color-border)" strokeWidth={0.7} strokeDasharray="5,4" />
-                  <text x={padL - 5} y={yPos(v) + 4} textAnchor="end" fontSize={9} fill="var(--color-text-muted)">{v.toFixed(1)}</text>
-                </g>
-              ))}
-              {/* Area fill */}
-              {areaD && <path d={areaD} fill="url(#wGrad)" />}
-              {/* Glowing line */}
-              <path d={pathD} fill="none" stroke="var(--color-primary)" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" opacity={0.35} filter="url(#wGlow)" />
-              {/* Main line */}
-              <path d={pathD} fill="none" stroke="var(--color-primary)" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-              {/* Dots */}
-              {data.map((d, i) => {
-                const isLatest = i === data.length - 1;
-                const cx = xForDate(d.date);
-                const cy = yPos(d.kg);
-                return (
-                  <g key={d.date}>
-                    <circle cx={cx} cy={cy} r={isLatest ? 5 : 3.5}
-                      fill={isLatest ? 'var(--color-primary)' : 'var(--color-bg)'}
-                      stroke="var(--color-primary)" strokeWidth={isLatest ? 0 : 2} />
-                  </g>
-                );
-              })}
-              {/* Pulse ring on latest point */}
-              <circle cx={lx} cy={ly} r={5} fill="var(--color-primary)" opacity={0}>
-                <animate attributeName="r" values="5;14;5" dur="3s" repeatCount="indefinite" />
-                <animate attributeName="opacity" values="0.55;0;0.55" dur="3s" repeatCount="indefinite" />
-              </circle>
-              {/* Latest value label */}
-              <text x={lx} y={ly - 10} textAnchor="middle" fontSize={10} fontWeight="700" fill="var(--color-primary)">{latest.kg}</text>
-              {/* X axis labels */}
-              {xTicks.map((t, i) => (
-                <text key={i} x={t.x} y={H - 6} textAnchor="middle" fontSize={8} fill="var(--color-text-muted)">{t.label}</text>
-              ))}
-            </svg>
-          );
-        }
-
         let touchStartX = 0;
         const tabs = ['month', 'alltime'] as const;
 
@@ -666,7 +695,7 @@ export default function DashboardScreen() {
                   if (Math.abs(dx) > 50) setWeightGraphTab(dx < 0 ? 'alltime' : 'month');
                 }}
               >
-                <WeightChart data={sorted} />
+                <WeightChart data={sorted} isMonth={weightGraphTab === 'month'} daysInMonth={daysInMonth} />
                 <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--color-text-muted)', margin: '4px 0 0', opacity: 0.6 }}>
                   ← swipe to switch →
                 </p>

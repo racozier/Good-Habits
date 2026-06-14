@@ -67,6 +67,7 @@ export default function App() {
             completed: false,
             missed: true,
             missedFromDate: task.missedFromDate || task.date,
+            overload: undefined,
           });
         }
       }

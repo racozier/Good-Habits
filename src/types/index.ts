@@ -16,6 +16,7 @@ export interface Task {
   scaryAddedDate?: string;
   missed?: boolean;
   missedFromDate?: string;
+  overload?: boolean;
 }
 
 export interface RecurringTask {
