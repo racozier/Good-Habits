@@ -19,32 +19,24 @@ async function countEpubChapters(dataUrl: string): Promise<number> {
     const containerXml = await containerFile.async('string');
     const opfPath = containerXml.match(/full-path="([^"]+)"/)?.[1] ?? '';
     const opfDir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : '';
-    const opfXml = await zip.file(opfPath)!.async('string');
+    const opfFile = zip.file(opfPath);
+    if (!opfFile) return 20;
+    const opfXml = await opfFile.async('string');
     const manifest: Record<string, string> = {};
     for (const m of opfXml.matchAll(/<item\s[^>]*\bid="([^"']+)"[^>]*\bhref="([^"']+)"/g)) manifest[m[1]] = m[2];
+    for (const m of opfXml.matchAll(/<item\s[^>]*\bid='([^"']+)'[^>]*\bhref='([^"']+)'/g)) manifest[m[1]] = m[2];
+    // Also handle href-before-id ordering
+    for (const m of opfXml.matchAll(/<item\s[^>]*\bhref="([^"']+)"[^>]*\bid="([^"']+)"/g)) manifest[m[2]] = m[1];
+    for (const m of opfXml.matchAll(/<item\s[^>]*\bhref='([^"']+)'[^>]*\bid='([^"']+)'/g)) manifest[m[2]] = m[1];
     let spineIds = [...opfXml.matchAll(/<itemref\s[^>]*\bidref="([^"]+)"/g)].map(m => m[1]);
     if (!spineIds.length) spineIds = [...opfXml.matchAll(/idref=['"]([^'"]+)['"]/g)].map(m => m[1]);
-    const paths = spineIds.map(id => manifest[id]).filter(Boolean).map(h => opfDir + h);
-    if (!paths.length) return 20;
-
-    // Try Roman numeral detection — if reasonable fraction found, use that count
-    const ROMAN_RE = /^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$/i;
-    const isRoman = (s: string) => s.trim().length > 0 && s.trim().length <= 12 && ROMAN_RE.test(s.trim());
-    let romanCount = 0;
-    const seen = new Set<string>();
-    for (const p of paths) {
-      const f = zip.file(p) ?? zip.file(p.replace(/^\//, ''));
-      if (!f) continue;
-      const raw = await f.async('string');
-      const body = raw.replace(/<head[\s\S]*?<\/head>/i, '').replace(/<[^>]+>/g, ' ');
-      const words = body.split(/\s+/).filter(Boolean);
-      for (const w of words.slice(0, 20)) {
-        if (isRoman(w)) { const k = w.toUpperCase(); if (!seen.has(k)) { seen.add(k); romanCount++; } break; }
-      }
+    let paths = spineIds.map(id => manifest[id]).filter(Boolean).map(h => opfDir + h);
+    // Fallback: scan zip for HTML/XHTML files (same as reader)
+    if (!paths.length) {
+      zip.forEach(p => { if (p.match(/\.(xhtml|html|htm)$/i) && !p.match(/toc|nav\./i)) paths.push(p); });
+      paths.sort();
     }
-    // Only trust Roman numeral count if it covers at least 30% of spine items
-    if (romanCount > 0 && romanCount >= paths.length * 0.3) return romanCount;
-    return paths.length;
+    return Math.max(paths.length, 1);
   } catch { return 20; }
 }
 
