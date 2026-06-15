@@ -1,10 +1,48 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Upload, Lock, Unlock, BookOpen } from 'lucide-react';
+import { Plus, Trash2, Upload, Lock, BookOpen } from 'lucide-react';
+import JSZip from 'jszip';
 import { db } from '../../db';
 import { uid } from '../../utils/dateUtils';
 import type { Reward, FavoriteBook } from '../../types';
 import { useAppStore } from '../../store/appStore';
+
+async function countEpubChapters(dataUrl: string): Promise<number> {
+  try {
+    const base64 = dataUrl.split(',')[1];
+    const binary = atob(base64);
+    const buf = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
+    const zip = await JSZip.loadAsync(buf.buffer);
+    const containerFile = zip.file('META-INF/container.xml');
+    if (!containerFile) return 20;
+    const containerXml = await containerFile.async('string');
+    const opfPath = containerXml.match(/full-path="([^"]+)"/)?.[1] ?? '';
+    const opfDir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : '';
+    const opfXml = await zip.file(opfPath)!.async('string');
+    const manifest: Record<string, string> = {};
+    for (const m of opfXml.matchAll(/<item\s[^>]*\bid="([^"']+)"[^>]*\bhref="([^"']+)"/g)) manifest[m[1]] = m[2];
+    let spineIds = [...opfXml.matchAll(/<itemref\s[^>]*\bidref="([^"]+)"/g)].map(m => m[1]);
+    if (!spineIds.length) spineIds = [...opfXml.matchAll(/idref=['"]([^'"]+)['"]/g)].map(m => m[1]);
+    const paths = spineIds.map(id => manifest[id]).filter(Boolean).map(h => opfDir + h);
+    // Count files that have roman numeral headings (same logic as reader)
+    const ROMAN_RE = /^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$/i;
+    const isRoman = (s: string) => s.trim().length > 0 && s.trim().length <= 12 && ROMAN_RE.test(s.trim());
+    let count = 0;
+    const seen = new Set<string>();
+    for (const p of paths) {
+      const f = zip.file(p) ?? zip.file(p.replace(/^\//, ''));
+      if (!f) continue;
+      const raw = await f.async('string');
+      const body = raw.replace(/<head[\s\S]*?<\/head>/i, '').replace(/<[^>]+>/g, ' ');
+      const words = body.split(/\s+/).filter(Boolean);
+      for (const w of words.slice(0, 20)) {
+        if (isRoman(w)) { const k = w.toUpperCase(); if (!seen.has(k)) { seen.add(k); count++; } break; }
+      }
+    }
+    return count > 0 ? count : Math.max(paths.length, 1);
+  } catch { return 20; }
+}
 
 const TIER_LABELS = ['', '< 25% done', '25–49% done', '50–74% done', '75–100% done'];
 const TIER_EMOJIS = ['', '🌱', '⭐', '🏅', '🏆'];
@@ -66,14 +104,28 @@ export default function RewardsScreen() {
   async function confirmEpubUpload() {
     if (!pendingEpub) return;
     const title = epubTitle.trim() || pendingEpub.defaultName;
-    // Preserve existing unlocked chapters when replacing the EPUB
     const existing = await db.favoriteBook.get('favorite');
+    const totalChapters = await countEpubChapters(pendingEpub.data);
     const fb: FavoriteBook = {
       id: 'favorite', title, epubData: pendingEpub.data,
-      totalChapters: 20, unlockedChapters: existing?.unlockedChapters ?? 0,
+      totalChapters, unlockedChapters: 0,
+      bankedChapters: existing?.bankedChapters ?? 0,
     };
     await db.favoriteBook.put(fb);
     setPendingEpub(null);
+    loadFavoriteBook();
+  }
+
+  async function redeemBanked() {
+    if (!favoriteBook || !favoriteBook.bankedChapters) return;
+    const banked = favoriteBook.bankedChapters;
+    const remaining = favoriteBook.totalChapters - favoriteBook.unlockedChapters;
+    const actualUnlock = Math.min(banked, remaining);
+    const newBanked = banked - actualUnlock;
+    await db.favoriteBook.update('favorite', {
+      unlockedChapters: favoriteBook.unlockedChapters + actualUnlock,
+      bankedChapters: newBanked,
+    });
     loadFavoriteBook();
   }
 
@@ -200,13 +252,25 @@ export default function RewardsScreen() {
             <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 8 }}>
               {favoriteBook.unlockedChapters} / {favoriteBook.totalChapters} chapters unlocked
             </p>
-            <label style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
-              marginTop: 10, fontSize: 13, color: 'var(--color-primary)', fontWeight: 600
-            }}>
-              <Upload size={14} /> Replace EPUB
-              <input type="file" accept=".epub" style={{ display: 'none' }} onChange={handleFavBookUpload} />
-            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
+              <label style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                fontSize: 13, color: 'var(--color-primary)', fontWeight: 600
+              }}>
+                <Upload size={14} /> Replace EPUB
+                <input type="file" accept=".epub" style={{ display: 'none' }} onChange={handleFavBookUpload} />
+              </label>
+              {(favoriteBook.bankedChapters ?? 0) > 0 && (
+                <button onClick={redeemBanked} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                  fontSize: 13, color: '#F5A07A', fontWeight: 700,
+                  background: 'rgba(245,160,122,0.12)', border: '1.5px solid rgba(245,160,122,0.4)',
+                  borderRadius: 8, padding: '5px 10px',
+                }}>
+                  🎁 Redeem {favoriteBook.bankedChapters} banked chapter{favoriteBook.bankedChapters !== 1 ? 's' : ''}
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div>

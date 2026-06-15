@@ -119,6 +119,7 @@ export interface FavoriteBook {
   epubData: string;
   totalChapters: number;
   unlockedChapters: number;
+  bankedChapters?: number;
 }
 
 export interface LifeGoal {

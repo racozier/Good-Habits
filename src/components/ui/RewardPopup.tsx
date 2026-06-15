@@ -37,8 +37,13 @@ type View = 'choice' | 'reward-list' | 'chosen' | 'tier4-confirm' | 'tier4-rewar
 async function unlockChapters(count: number) {
   const fb = await db.favoriteBook.get('favorite');
   if (!fb) return;
-  const newCount = Math.min(fb.totalChapters, fb.unlockedChapters + count);
-  await db.favoriteBook.update('favorite', { unlockedChapters: newCount });
+  const remaining = fb.totalChapters - fb.unlockedChapters;
+  const actualUnlock = Math.min(count, remaining);
+  const overflow = count - actualUnlock;
+  await db.favoriteBook.update('favorite', {
+    unlockedChapters: fb.unlockedChapters + actualUnlock,
+    bankedChapters: (fb.bankedChapters ?? 0) + overflow,
+  });
 }
 
 export default function RewardPopup({ open, tier, energyLevel, onClose }: Props) {
