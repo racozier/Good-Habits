@@ -25,10 +25,12 @@ async function countEpubChapters(dataUrl: string): Promise<number> {
     let spineIds = [...opfXml.matchAll(/<itemref\s[^>]*\bidref="([^"]+)"/g)].map(m => m[1]);
     if (!spineIds.length) spineIds = [...opfXml.matchAll(/idref=['"]([^'"]+)['"]/g)].map(m => m[1]);
     const paths = spineIds.map(id => manifest[id]).filter(Boolean).map(h => opfDir + h);
-    // Count files that have roman numeral headings (same logic as reader)
+    if (!paths.length) return 20;
+
+    // Try Roman numeral detection — if reasonable fraction found, use that count
     const ROMAN_RE = /^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$/i;
     const isRoman = (s: string) => s.trim().length > 0 && s.trim().length <= 12 && ROMAN_RE.test(s.trim());
-    let count = 0;
+    let romanCount = 0;
     const seen = new Set<string>();
     for (const p of paths) {
       const f = zip.file(p) ?? zip.file(p.replace(/^\//, ''));
@@ -37,10 +39,12 @@ async function countEpubChapters(dataUrl: string): Promise<number> {
       const body = raw.replace(/<head[\s\S]*?<\/head>/i, '').replace(/<[^>]+>/g, ' ');
       const words = body.split(/\s+/).filter(Boolean);
       for (const w of words.slice(0, 20)) {
-        if (isRoman(w)) { const k = w.toUpperCase(); if (!seen.has(k)) { seen.add(k); count++; } break; }
+        if (isRoman(w)) { const k = w.toUpperCase(); if (!seen.has(k)) { seen.add(k); romanCount++; } break; }
       }
     }
-    return count > 0 ? count : Math.max(paths.length, 1);
+    // Only trust Roman numeral count if it covers at least 30% of spine items
+    if (romanCount > 0 && romanCount >= paths.length * 0.3) return romanCount;
+    return paths.length;
   } catch { return 20; }
 }
 
