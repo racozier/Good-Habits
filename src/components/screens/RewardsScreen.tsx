@@ -16,15 +16,18 @@ function epubDetectRoman(html: string): boolean {
 }
 function epubIsToc(html: string): boolean {
   const doc = new DOMParser().parseFromString('<body>' + html + '</body>', 'text/html');
-  const links = doc.body.querySelectorAll('a[href]');
-  const blocks = doc.body.querySelectorAll('h1,h2,h3,h4,h5,h6,p');
-  if (links.length >= 4 && links.length > blocks.length) return true;
   const firstH = doc.body.querySelector('h1,h2,h3,h4,h5,h6');
   if (firstH) {
     const t = (firstH.textContent ?? '').toLowerCase().trim();
     if (t === 'contents' || t === 'table of contents' || t === 'content') return true;
   }
-  return false;
+  const els = Array.from(doc.body.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,a'));
+  let romanCount = 0;
+  for (const el of els.slice(0, 60)) {
+    const t = (el.textContent ?? '').trim();
+    if (t.length > 0 && t.length <= 12 && EPUB_ROMAN_RE.test(t)) romanCount++;
+  }
+  return romanCount >= 5;
 }
 
 async function countEpubChapters(dataUrl: string): Promise<number> {

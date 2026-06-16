@@ -38,17 +38,20 @@ function sanitize(html: string): string {
 
 function isTocFile(html: string): boolean {
   const doc = new DOMParser().parseFromString('<body>' + html + '</body>', 'text/html');
-  const links = doc.body.querySelectorAll('a[href]');
-  const blocks = doc.body.querySelectorAll('h1,h2,h3,h4,h5,h6,p');
-  // Link-heavy TOC
-  if (links.length >= 4 && links.length > blocks.length) return true;
-  // Heading-based TOC: first heading says "contents" / "table of contents"
+  // Heading-based: first heading says "contents" / "table of contents"
   const firstH = doc.body.querySelector('h1,h2,h3,h4,h5,h6');
   if (firstH) {
     const t = (firstH.textContent ?? '').toLowerCase().trim();
     if (t === 'contents' || t === 'table of contents' || t === 'content') return true;
   }
-  return false;
+  // Count distinct Roman numerals in the first 60 elements — TOC has many, chapters have 1
+  const els = Array.from(doc.body.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,a'));
+  let romanCount = 0;
+  for (const el of els.slice(0, 60)) {
+    const t = (el.textContent ?? '').trim();
+    if (t.length > 0 && t.length <= 12 && ROMAN_RE.test(t)) romanCount++;
+  }
+  return romanCount >= 5;
 }
 
 function extractBody(raw: string): string {
