@@ -7,6 +7,20 @@ import { uid } from '../../utils/dateUtils';
 import type { Reward, FavoriteBook } from '../../types';
 import { useAppStore } from '../../store/appStore';
 
+const EPUB_ROMAN_RE = /^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$/i;
+function epubIsRoman(s: string) { const t = s.trim().toUpperCase(); return t.length > 0 && t.length <= 12 && EPUB_ROMAN_RE.test(t); }
+function epubDetectRoman(html: string): boolean {
+  const doc = new DOMParser().parseFromString('<body>' + html + '</body>', 'text/html');
+  const els = Array.from(doc.body.querySelectorAll('h1,h2,h3,h4,h5,h6,p,div'));
+  return els.slice(0, 15).some(el => epubIsRoman((el.textContent ?? '').trim()));
+}
+function epubIsToc(html: string): boolean {
+  const doc = new DOMParser().parseFromString('<body>' + html + '</body>', 'text/html');
+  const links = doc.body.querySelectorAll('a[href]');
+  const blocks = doc.body.querySelectorAll('h1,h2,h3,h4,h5,h6,p');
+  return links.length >= 4 && links.length > blocks.length;
+}
+
 async function countEpubChapters(dataUrl: string): Promise<number> {
   try {
     const base64 = dataUrl.split(',')[1];
@@ -25,18 +39,40 @@ async function countEpubChapters(dataUrl: string): Promise<number> {
     const manifest: Record<string, string> = {};
     for (const m of opfXml.matchAll(/<item\s[^>]*\bid="([^"']+)"[^>]*\bhref="([^"']+)"/g)) manifest[m[1]] = m[2];
     for (const m of opfXml.matchAll(/<item\s[^>]*\bid='([^"']+)'[^>]*\bhref='([^"']+)'/g)) manifest[m[1]] = m[2];
-    // Also handle href-before-id ordering
     for (const m of opfXml.matchAll(/<item\s[^>]*\bhref="([^"']+)"[^>]*\bid="([^"']+)"/g)) manifest[m[2]] = m[1];
     for (const m of opfXml.matchAll(/<item\s[^>]*\bhref='([^"']+)'[^>]*\bid='([^"']+)'/g)) manifest[m[2]] = m[1];
     let spineIds = [...opfXml.matchAll(/<itemref\s[^>]*\bidref="([^"]+)"/g)].map(m => m[1]);
     if (!spineIds.length) spineIds = [...opfXml.matchAll(/idref=['"]([^'"]+)['"]/g)].map(m => m[1]);
     let paths = spineIds.map(id => manifest[id]).filter(Boolean).map(h => opfDir + h);
-    // Fallback: scan zip for HTML/XHTML files (same as reader)
     if (!paths.length) {
       zip.forEach(p => { if (p.match(/\.(xhtml|html|htm)$/i) && !p.match(/toc|nav\./i)) paths.push(p); });
       paths.sort();
     }
-    return Math.max(paths.length, 1);
+    if (!paths.length) return 20;
+
+    // Mirror the reader's chapter-building logic to get an exact match
+    let chapterCount = 0;
+    let hasRoman = false;
+    const bodies: string[] = [];
+    for (const p of paths) {
+      const f = zip.file(p) ?? zip.file(p.replace(/^\//, ''));
+      if (!f) continue;
+      const raw = await f.async('string');
+      const m = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+      bodies.push(m ? m[1] : raw.replace(/<\/?(html|head|body)[^>]*>/gi, ''));
+    }
+    for (const body of bodies) {
+      if (!body.trim()) continue;
+      if (epubIsToc(body)) continue;
+      if (epubDetectRoman(body)) { chapterCount++; hasRoman = true; }
+      else if (!hasRoman) { /* preamble, skip */ }
+      // non-Roman after first chapter just appends, doesn't add new count
+    }
+    // Fallback: no Roman numerals found, count non-empty non-toc files
+    if (!hasRoman) {
+      chapterCount = bodies.filter(b => b.trim() && !epubIsToc(b)).length;
+    }
+    return Math.max(chapterCount, 1);
   } catch { return 20; }
 }
 

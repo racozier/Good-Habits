@@ -133,11 +133,13 @@ async function parseEpub(dataUrl: string): Promise<{ chapters: RomanChapter[]; d
   const chapters: RomanChapter[] = [];
   for (const { html } of files) {
     if (!html.trim()) continue;
+    if (isTocFile(html)) {
+      tocPages.push({ numeral: 'Contents', html, isToc: true });
+      continue;
+    }
     const numeral = detectRomanNumeral(html);
     if (numeral) {
       chapters.push({ numeral, html });
-    } else if (isTocFile(html)) {
-      tocPages.push({ numeral: 'Contents', html, isToc: true });
     } else if (chapters.length > 0) {
       chapters[chapters.length - 1].html += '\n' + html;
     }
