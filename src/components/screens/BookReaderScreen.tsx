@@ -40,8 +40,15 @@ function isTocFile(html: string): boolean {
   const doc = new DOMParser().parseFromString('<body>' + html + '</body>', 'text/html');
   const links = doc.body.querySelectorAll('a[href]');
   const blocks = doc.body.querySelectorAll('h1,h2,h3,h4,h5,h6,p');
-  // TOC: many links relative to text blocks
-  return links.length >= 4 && links.length > blocks.length;
+  // Link-heavy TOC
+  if (links.length >= 4 && links.length > blocks.length) return true;
+  // Heading-based TOC: first heading says "contents" / "table of contents"
+  const firstH = doc.body.querySelector('h1,h2,h3,h4,h5,h6');
+  if (firstH) {
+    const t = (firstH.textContent ?? '').toLowerCase().trim();
+    if (t === 'contents' || t === 'table of contents' || t === 'content') return true;
+  }
+  return false;
 }
 
 function extractBody(raw: string): string {
