@@ -239,6 +239,15 @@ export default function DashboardScreen() {
       const exp = expected.toISOString().split('T')[0];
       if (completedWks[i] === exp) wkStreak++; else break;
     }
+    // Reset to 0 once a week has fully passed without hitting the goal —
+    // the most recent completed week must be this week or last week.
+    const lastCompleted = completedWks[completedWks.length - 1];
+    if (lastCompleted) {
+      const prevWeekStart = new Date(weekStart + 'T12:00:00');
+      prevWeekStart.setDate(prevWeekStart.getDate() - 7);
+      const prevWeekStartStr = prevWeekStart.toISOString().split('T')[0];
+      if (lastCompleted !== weekStart && lastCompleted !== prevWeekStartStr) wkStreak = 0;
+    }
     setWorkoutStreak(wkStreak);
 
     // Sleep: yesterday's bedtime → today's wake-up time
